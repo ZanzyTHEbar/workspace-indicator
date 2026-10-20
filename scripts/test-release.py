@@ -15,5 +15,8 @@ for bad in ("", "v1.2.3", "1.2; touch /tmp/bad"):
         raise AssertionError(bad)
 config = json.loads(Path(".releaserc.json").read_text())
 assert config["branches"] == ["main"]
+analyzer = config["plugins"][0]
+assert analyzer[0] == "@semantic-release/commit-analyzer"
+assert {"type": "build", "scope": "debian", "release": "patch"} in analyzer[1]["releaseRules"]
 assert "@semantic-release/npm" not in str(config)
 print("release checks passed")
