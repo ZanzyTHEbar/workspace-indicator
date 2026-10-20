@@ -1,7 +1,7 @@
 {
   "name": "workspace-indicator-release",
   "private": true,
-  "scripts": {"release": "semantic-release", "test": "python3 scripts/test-release.py"},
+  "scripts": {"release": "semantic-release", "test": "node scripts/test-release.mjs", "test:packaging": "node scripts/test-packaging.mjs"},
   "devDependencies": {
     "semantic-release": "^25.0.9",
     "@semantic-release/changelog": "^6.0.3",

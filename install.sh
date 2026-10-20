@@ -11,6 +11,17 @@ HYPR_DIR="${HYPR_DIR:-$XDG_CONFIG/hypr}"
 HYPR_CONF_DIR="${HYPR_CONF_DIR:-$HYPR_DIR/config}"
 OMARCHY_HOOKS_ROOT="${OMARCHY_HOOKS_ROOT:-$XDG_CONFIG/omarchy/hooks}"
 
+if [[ "${1:-}" == --uninstall ]]; then
+  bash "$ROOT_DIR/scripts/manage-service.sh" stop
+  rm -f "$BINDIR/workspace-indicator" "$BINDIR/workspace-indicator-focusd" \
+    "$SYSTEMD_USER_DIR/workspace-indicator.service" \
+    "$HYPR_CONF_DIR/workspace-indicator.local.conf" "$HYPR_DIR/workspace-indicator.lua" \
+    "$OMARCHY_HOOKS_ROOT/theme-set-workspace-indicator" "$OMARCHY_HOOKS_ROOT/theme-set.d/workspace-indicator"
+  # The optional pcall include is harmless without its module; preserve user config.
+  exit 0
+fi
+[[ $# == 0 ]] || { echo 'Usage: install.sh [--uninstall]' >&2; exit 1; }
+
 /usr/bin/install -Dm755 "$ROOT_DIR/workspace-indicator" "$BINDIR/workspace-indicator"
 /usr/bin/install -Dm755 "$ROOT_DIR/scripts/workspace-indicator-focusd" "$BINDIR/workspace-indicator-focusd"
 /usr/bin/install -Dm644 "$ROOT_DIR/systemd/workspace-indicator.service" "$SYSTEMD_USER_DIR/workspace-indicator.service"
@@ -34,3 +45,4 @@ fi
 
 # Re-render Hyprland .conf and .lua with any user-configured keybind from config.{lua,toml,conf}
 "$BINDIR/workspace-indicator" --sync-hyprland 2>/dev/null || true
+bash "$ROOT_DIR/scripts/manage-service.sh" start
