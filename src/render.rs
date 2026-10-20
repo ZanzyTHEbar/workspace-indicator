@@ -158,6 +158,12 @@ pub fn compute_pill_layout_morphed(
 
 /// Signed-distance-field coverage `[0.0, 1.0]` for a 2D capsule `(ax, ay) -> (bx, by)` with radius `r`.
 #[inline]
+fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+#[inline]
 pub fn sdf_capsule_coverage_scaled(
     px: f64,
     py: f64,
@@ -252,12 +258,14 @@ pub fn rasterize_pill_argb8888_scaled(
             let mut out_b = bg.b * out_a;
 
             // Composite 1-px specular glass rim (inner edge highlight, tinted by active accent)
-            // Rim is brightest at the inner 1px boundary of the pill capsule.
-            // dist < 0 means inside the pill; the rim sits at dist in [-1/scale, 0].
-            let rim = (1.0 + dist * scale).clamp(0.0, 1.0) * opacity * border_alpha * 2.5;
-            if rim > 0.005 {
+            // Use distance to boundary: rim peaks 0.5px inside the edge, smooth on both sides.
+            // This avoids curvature-dependent brightness (rounded caps vs flat sections).
+            let t = (-dist * scale).clamp(0.0, 2.0); // 0 at boundary, increases inward
+            // Smooth bell curve: rises from 0 at boundary, peaks at t=1, falls to 0 at t=2
+            let rim = smoothstep(0.0, 0.6, t) * smoothstep(2.0, 0.6, t) * opacity * border_alpha;
+            if rim > 0.003 {
                 // Tint rim with a subtle white/active blend (inner glass highlight)
-                let inv_rim = 1.0 - rim.clamp(0.0, 0.7);
+                let inv_rim = 1.0 - rim.clamp(0.0, 0.5);
                 out_r = 1.0 * rim + out_r * inv_rim;
                 out_g = 1.0 * rim + out_g * inv_rim;
                 out_b = 1.0 * rim + out_b * inv_rim;
