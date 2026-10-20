@@ -1,6 +1,6 @@
 # Maintainer: ZanzyTHEbar <https://github.com/ZanzyTHEbar>
 pkgname=workspace-indicator-bin
-pkgver=0.4.2
+pkgver=0.5.0
 pkgrel=1
 pkgdesc="Zero-dependency static Wayland workspace OSD for Hyprland, Sway, Niri, and Omarchy"
 arch=('x86_64' 'aarch64')
@@ -10,8 +10,8 @@ provides=('workspace-indicator')
 conflicts=('workspace-indicator')
 source_x86_64=("${pkgname}-${pkgver}-x86_64.tar.gz::${url}/releases/download/v${pkgver}/workspace-indicator-linux-x86_64.tar.gz")
 source_aarch64=("${pkgname}-${pkgver}-aarch64.tar.gz::${url}/releases/download/v${pkgver}/workspace-indicator-linux-aarch64.tar.gz")
-sha256sums_x86_64=('5466c13ae48bd52128b869865234f04329e9be81d7cacd6de8f9da45ce317183')
-sha256sums_aarch64=('f5a65f6076a792421065319b601252b495dea92eef16225c647ce352153f3029')
+sha256sums_x86_64=('d0076d6b234c800c38f1f7257f321b50f72291fa985a9775fc0ef1dafa152ac1')
+sha256sums_aarch64=('2d785d74f2dff0809125026731976cf990eb48c61631bfc084b9dc8e9bd092a0')
 
 package() {
   install -Dm755 "${srcdir}/workspace-indicator" "${pkgdir}/usr/bin/workspace-indicator"

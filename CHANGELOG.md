@@ -1,3 +1,10 @@
+# [0.5.0](https://github.com/ZanzyTHEbar/workspace-indicator/compare/v0.4.2...v0.5.0) (2026-10-20)
+
+
+### Features
+
+* **build:** manage package lifecycle through Make ([28d8538](https://github.com/ZanzyTHEbar/workspace-indicator/commit/28d853880b810f00619904c73ad8fcbd8d179013))
+
 ## [0.4.2](https://github.com/ZanzyTHEbar/workspace-indicator/compare/v0.4.1...v0.4.2) (2026-10-20)
 
 
