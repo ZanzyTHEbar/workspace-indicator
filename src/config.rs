@@ -139,6 +139,7 @@ pub struct Palette {
     pub occupied: Rgba,
     pub empty: Rgba,
     pub urgent: Rgba,
+    pub border_alpha: f64,
 }
 
 impl Default for Palette {
@@ -190,6 +191,7 @@ impl Palette {
             occupied: Rgba::parse(fg)?.with_alpha(0.55),
             empty: Rgba::parse(dim)?.with_alpha(0.25),
             urgent: Rgba::parse(red)?.with_alpha(1.0),
+            border_alpha: 0.18,
         })
     }
 
@@ -224,6 +226,11 @@ impl Palette {
                 }
                 "comment" | "muted" | "dim" | "empty" | "color8" | "dark_foreground" => {
                     self.empty = color.with_alpha(emp_alpha);
+                }
+                "border_alpha" | "border-alpha" => {
+                    if let Ok(v) = raw_val.trim().parse::<f64>() {
+                        self.border_alpha = v.clamp(0.0, 1.0);
+                    }
                 }
                 "red" | "color1" | "urgent" => {
                     self.urgent = color.with_alpha(1.0);
@@ -266,6 +273,7 @@ pub struct Config {
     pub custom_occupied: Option<Rgba>,
     pub custom_empty: Option<Rgba>,
     pub custom_urgent: Option<Rgba>,
+    pub border_alpha: f64,
     pub palette: Palette,
 }
 
@@ -296,6 +304,7 @@ impl Default for Config {
             custom_occupied: None,
             custom_empty: None,
             custom_urgent: None,
+            border_alpha: 0.18,
             palette: Palette::default(),
         }
     }
@@ -469,6 +478,7 @@ impl Config {
         if let Some(c) = self.custom_urgent {
             pal.urgent = c;
         }
+        pal.border_alpha = self.border_alpha;
 
         self.palette = pal;
     }

@@ -258,6 +258,8 @@ impl Daemon {
             self.layout.width as u32,
             self.layout.height as u32,
         );
+        self.wl.mapped = true;
+        self.wl.configured = true;
     }
 
     fn render_and_present(&mut self) {
@@ -272,9 +274,10 @@ impl Daemon {
         let bg = self.cfg.palette.bg;
         let active_ws = self.ws_state.active_ws;
         let layout = &self.layout;
-        let _ = self.wl.present_frame(phys_w, phys_h, |pixels| {
+        let _ = self.wl.present_frame(phys_w, phys_h, opacity, |pixels| {
             rasterize_pill_argb8888_scaled(
                 pixels, phys_w, phys_h, scale, opacity, bg, layout, active_ws,
+                self.cfg.border_alpha,
             );
         });
     }

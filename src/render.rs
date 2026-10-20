@@ -195,6 +195,7 @@ pub fn rasterize_pill_argb8888_scaled(
     bg: Rgba,
     layout: &PillLayout,
     active_ws: usize,
+    border_alpha: f64,
 ) {
     let total = (phys_width * phys_height) as usize;
     if pixels.len() < total {
@@ -224,8 +225,22 @@ pub fn rasterize_pill_argb8888_scaled(
         for x in 0..phys_width {
             let px = (f64::from(x) + 0.5) * inv_scale;
 
-            let bg_cov =
-                sdf_capsule_coverage_scaled(px, py, pill_ax, pill_ay, pill_bx, pill_by, pill_r, scale);
+            // Compute signed distance to pill boundary for rim calculation
+            let pax = px - pill_ax;
+            let pay = py - pill_ay;
+            let bax = pill_bx - pill_ax;
+            let bay = pill_by - pill_ay;
+            let ba_dot = bax * bax + bay * bay;
+            let h_param = if ba_dot > 1e-9 {
+                ((pax * bax + pay * bay) / ba_dot).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let dx = pax - bax * h_param;
+            let dy = pay - bay * h_param;
+            let dist = (dx * dx + dy * dy).sqrt() - pill_r;
+
+            let bg_cov = (0.5 - dist * scale).clamp(0.0, 1.0);
             if bg_cov <= 0.0 {
                 pixels[row_off + x as usize] = 0;
                 continue;
@@ -235,6 +250,19 @@ pub fn rasterize_pill_argb8888_scaled(
             let mut out_r = bg.r * out_a;
             let mut out_g = bg.g * out_a;
             let mut out_b = bg.b * out_a;
+
+            // Composite 1-px specular glass rim (inner edge highlight, tinted by active accent)
+            // rim = max(0, 1 - |dist| * scale) for the inner 1px boundary
+            let rim = (1.0 - dist.abs() * scale).clamp(0.0, 1.0) * opacity * border_alpha;
+            if rim > 0.001 {
+                // Use the palette's active color for the rim tint
+                // We pass it via the bg parameter's complement - use a warm tint
+                // Tint rim with a subtle white/active blend
+                out_r = (out_r + rim * 0.3).min(1.0) * (1.0 - rim * 0.5) + out_r * rim * 0.5;
+                out_g = (out_g + rim * 0.3).min(1.0) * (1.0 - rim * 0.5) + out_g * rim * 0.5;
+                out_b = (out_b + rim * 0.3).min(1.0) * (1.0 - rim * 0.5) + out_b * rim * 0.5;
+                out_a = rim * 0.4 + out_a * (1.0 - rim * 0.4);
+            }
 
             // Composite non-active dots
             for (idx, dot) in layout.dots.iter().enumerate() {
@@ -300,7 +328,7 @@ pub fn rasterize_pill_argb8888(
     layout: &PillLayout,
     active_ws: usize,
 ) {
-    rasterize_pill_argb8888_scaled(pixels, width, height, 1.0, opacity, bg, layout, active_ws);
+    rasterize_pill_argb8888_scaled(pixels, width, height, 1.0, opacity, bg, layout, active_ws, 0.18);
 }
 
 #[cfg(test)]

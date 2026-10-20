@@ -141,6 +141,7 @@ pub struct WaylandClient {
     fractional_scale_id: u32,
     preferred_scale_120: u32,
     bound_output_id: u32,
+    pub mapped: bool,
     applied_position: Option<Position>,
     applied_margin: i32,
     applied_size: (u32, u32),
@@ -175,6 +176,7 @@ impl WaylandClient {
             fractional_scale_id: 0,
             preferred_scale_120: 120,
             bound_output_id: 0,
+            mapped: false,
             applied_position: None,
             applied_margin: -1,
             applied_size: (0, 0),
@@ -671,6 +673,7 @@ impl WaylandClient {
     }
 
     pub fn destroy_surface(&mut self) -> io::Result<()> {
+        self.mapped = false;
         if self.fractional_scale_id != 0 {
             let _ = self.send_msg(self.fractional_scale_id, WP_FRACTIONAL_SCALE_DESTROY, &[]);
             self.fractional_scale_id = 0;
@@ -693,11 +696,35 @@ impl WaylandClient {
         Ok(())
     }
 
-    pub fn present_frame<F>(&mut self, width: u32, height: u32, render_fn: F) -> io::Result<()>
+    pub fn present_frame<F>(&mut self, width: u32, height: u32, opacity: f64, render_fn: F) -> io::Result<()>
     where
         F: FnOnce(&mut [u32]),
     {
-        if !self.configured || self.surface_id == 0 || width == 0 || height == 0 {
+        if !self.configured || self.surface_id == 0 {
+            return Ok(());
+        }
+
+        // Unmap the surface when fully transparent to remove it from compositor's render tree
+        if opacity <= 0.001 {
+            if self.mapped {
+                // Attach null buffer to unmap (wl_surface.attach(NULL, 0, 0))
+                // This removes the layer from hyprctl layers entirely
+                self.send_msg(self.surface_id, WL_SURFACE_ATTACH, &[0, 0, 0])?;
+                self.send_msg(self.surface_id, WL_SURFACE_COMMIT, &[])?;
+                self.mapped = false;
+            }
+            return Ok(());
+        }
+
+        if !self.mapped {
+            // Remap: commit without buffer to trigger configure event
+            self.mapped = true;
+            self.configured = false;
+            self.send_msg(self.surface_id, WL_SURFACE_COMMIT, &[])?;
+            return Ok(());
+        }
+
+        if width == 0 || height == 0 {
             return Ok(());
         }
 
