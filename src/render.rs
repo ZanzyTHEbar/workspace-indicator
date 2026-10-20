@@ -252,16 +252,16 @@ pub fn rasterize_pill_argb8888_scaled(
             let mut out_b = bg.b * out_a;
 
             // Composite 1-px specular glass rim (inner edge highlight, tinted by active accent)
-            // rim = max(0, 1 - |dist| * scale) for the inner 1px boundary
-            let rim = (1.0 - dist.abs() * scale).clamp(0.0, 1.0) * opacity * border_alpha;
-            if rim > 0.001 {
-                // Use the palette's active color for the rim tint
-                // We pass it via the bg parameter's complement - use a warm tint
-                // Tint rim with a subtle white/active blend
-                out_r = (out_r + rim * 0.3).min(1.0) * (1.0 - rim * 0.5) + out_r * rim * 0.5;
-                out_g = (out_g + rim * 0.3).min(1.0) * (1.0 - rim * 0.5) + out_g * rim * 0.5;
-                out_b = (out_b + rim * 0.3).min(1.0) * (1.0 - rim * 0.5) + out_b * rim * 0.5;
-                out_a = rim * 0.4 + out_a * (1.0 - rim * 0.4);
+            // Rim is brightest at the inner 1px boundary of the pill capsule.
+            // dist < 0 means inside the pill; the rim sits at dist in [-1/scale, 0].
+            let rim = (1.0 + dist * scale).clamp(0.0, 1.0) * opacity * border_alpha * 2.5;
+            if rim > 0.005 {
+                // Tint rim with a subtle white/active blend (inner glass highlight)
+                let inv_rim = 1.0 - rim.clamp(0.0, 0.7);
+                out_r = 1.0 * rim + out_r * inv_rim;
+                out_g = 1.0 * rim + out_g * inv_rim;
+                out_b = 1.0 * rim + out_b * inv_rim;
+                out_a = rim + out_a * inv_rim;
             }
 
             // Composite non-active dots
