@@ -1,5 +1,6 @@
 use std::env;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{ErrorKind, Read, Write};
+use std::os::unix::io::{AsRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -58,19 +59,36 @@ pub fn hypr_request(cmd: &[u8]) -> Option<String> {
     Some(out)
 }
 
-pub fn query_workspace_state(max_ws: usize) -> WorkspaceState {
+pub fn query_workspace_state(max_ws: usize, per_monitor: bool) -> WorkspaceState {
     let active_json = hypr_request(b"j/activeworkspace").unwrap_or_default();
     let workspaces_json = hypr_request(b"j/workspaces").unwrap_or_default();
     let monitors_json = hypr_request(b"j/monitors").unwrap_or_default();
 
-    parse_workspace_state(&active_json, &workspaces_json, &monitors_json, max_ws)
+    parse_workspace_state_filtered(
+        &active_json,
+        &workspaces_json,
+        &monitors_json,
+        max_ws,
+        per_monitor,
+    )
 }
 
+#[cfg(test)]
 pub fn parse_workspace_state(
     active_json: &str,
     workspaces_json: &str,
     monitors_json: &str,
     max_ws: usize,
+) -> WorkspaceState {
+    parse_workspace_state_filtered(active_json, workspaces_json, monitors_json, max_ws, false)
+}
+
+pub fn parse_workspace_state_filtered(
+    active_json: &str,
+    workspaces_json: &str,
+    monitors_json: &str,
+    max_ws: usize,
+    per_monitor: bool,
 ) -> WorkspaceState {
     let raw_active_id = json_key_int(active_json, "id").unwrap_or(1);
     let active_ws = if raw_active_id < 1 {
@@ -80,6 +98,20 @@ pub fn parse_workspace_state(
     };
 
     let active_mon_name = json_key_string(active_json, "monitor");
+    let monitors = parse_monitors(monitors_json);
+    let target_monitor = active_mon_name
+        .as_deref()
+        .and_then(|name| monitors.iter().find(|m| m.name == name).cloned())
+        .or_else(|| monitors.into_iter().find(|m| m.focused));
+
+    let filter_mon_name = if per_monitor {
+        target_monitor
+            .as_ref()
+            .map(|m| m.name.as_str())
+            .or(active_mon_name.as_deref())
+    } else {
+        None
+    };
 
     let mut occupied = vec![false; max_ws + 1];
     let mut occ_max = 0usize;
@@ -90,6 +122,15 @@ pub fn parse_workspace_state(
         };
         if id < 1 || (id as usize) > max_ws {
             continue;
+        }
+        if let Some(req_mon) = filter_mon_name {
+            if !req_mon.is_empty() {
+                if let Some(ws_mon) = json_key_string(obj, "monitor") {
+                    if ws_mon != req_mon {
+                        continue;
+                    }
+                }
+            }
         }
         // Only mark workspace as occupied if it actually holds windows (or windows key is absent).
         // Empty persistent workspaces ("windows": 0) should render as empty slots unless active.
@@ -102,12 +143,6 @@ pub fn parse_workspace_state(
             }
         }
     }
-
-    let monitors = parse_monitors(monitors_json);
-    let target_monitor = active_mon_name
-        .as_deref()
-        .and_then(|name| monitors.iter().find(|m| m.name == name).cloned())
-        .or_else(|| monitors.into_iter().find(|m| m.focused));
 
     WorkspaceState {
         active_ws,
@@ -170,35 +205,64 @@ pub fn is_relevant_ipc_event(line: &str) -> bool {
     )
 }
 
-/// Blocking event loop for `.socket2.sock` with automatic reconnect.
-pub fn listen_socket2<F: Fn()>(on_event: F) {
-    loop {
-        let Some(path) = find_hypr_socket(".socket2.sock") else {
-            std::thread::sleep(Duration::from_secs(1));
-            continue;
-        };
+/// Non-blocking Hyprland `.socket2.sock` reader for single-threaded `epoll` multiplexing.
+pub struct Socket2Stream {
+    stream: UnixStream,
+    buf: Vec<u8>,
+}
 
-        let Ok(stream) = UnixStream::connect(&path) else {
-            std::thread::sleep(Duration::from_secs(1));
-            continue;
-        };
+impl Socket2Stream {
+    pub fn connect_nonblocking() -> Option<Self> {
+        let path = find_hypr_socket(".socket2.sock")?;
+        let stream = UnixStream::connect(path).ok()?;
+        stream.set_nonblocking(true).ok()?;
+        Some(Self {
+            stream,
+            buf: Vec::with_capacity(4096),
+        })
+    }
 
-        let mut reader = BufReader::with_capacity(4096, stream);
-        let mut line = String::with_capacity(256);
+    pub fn fd(&self) -> RawFd {
+        self.stream.as_raw_fd()
+    }
+
+    /// Drains available bytes; returns `(matched_relevant_event, socket_closed)`.
+    pub fn drain_events(&mut self) -> (bool, bool) {
+        let mut matched = false;
+        let mut closed = false;
+        let mut tmp = [0u8; 4096];
 
         loop {
-            line.clear();
-            match reader.read_line(&mut line) {
-                Ok(0) | Err(_) => break,
-                Ok(_) => {
-                    if is_relevant_ipc_event(line.trim_end()) {
-                        on_event();
-                    }
+            match self.stream.read(&mut tmp) {
+                Ok(0) => {
+                    closed = true;
+                    break;
+                }
+                Ok(n) => {
+                    self.buf.extend_from_slice(&tmp[..n]);
+                }
+                Err(e) if e.kind() == ErrorKind::WouldBlock => break,
+                Err(_) => {
+                    closed = true;
+                    break;
                 }
             }
         }
 
-        std::thread::sleep(Duration::from_secs(1));
+        while let Some(pos) = self.buf.iter().position(|&b| b == b'\n') {
+            if let Ok(line) = std::str::from_utf8(&self.buf[..pos]) {
+                if is_relevant_ipc_event(line.trim_end()) {
+                    matched = true;
+                }
+            }
+            self.buf.drain(..=pos);
+        }
+
+        if self.buf.len() > 16384 {
+            self.buf.clear();
+        }
+
+        (matched, closed)
     }
 }
 
@@ -464,6 +528,20 @@ mod tests {
         let high_active = r#"{ "id": 12, "name": "12", "monitor": "DP-2" }"#;
         let high_state = parse_workspace_state(high_active, workspaces, monitors, 10);
         assert_eq!(high_state.active_ws, 12);
+
+        // per_monitor filtering excludes workspaces belonging to other monitors
+        let multi_ws = r#"[{
+            "id": 1,
+            "monitor": "eDP-1",
+            "windows": 2
+        },{
+            "id": 3,
+            "monitor": "DP-2",
+            "windows": 1
+        }]"#;
+        let filtered = parse_workspace_state_filtered(active, multi_ws, monitors, 10, true);
+        assert!(!filtered.occupied[1]);
+        assert!(filtered.occupied[3]);
     }
 
     #[test]

@@ -250,6 +250,7 @@ pub struct Config {
     pub active_radius: f64,
     pub persistent_workspaces: usize,
     pub max_workspaces: usize,
+    pub per_monitor: bool,
     pub theme: String,
     pub keybind: String,
     pub background_alpha: f64,
@@ -278,6 +279,7 @@ impl Default for Config {
             active_radius: 5.5,
             persistent_workspaces: 5,
             max_workspaces: 10,
+            per_monitor: false,
             theme: "auto".to_string(),
             keybind: "$mainMod, grave".to_string(),
             background_alpha: 0.75,
@@ -366,6 +368,12 @@ impl Config {
                     if let Ok(v) = val.parse::<usize>() {
                         self.max_workspaces = v.clamp(1, 32);
                     }
+                }
+                "per_monitor" | "per_monitor_workspaces" => {
+                    self.per_monitor = matches!(
+                        val.to_ascii_lowercase().as_str(),
+                        "true" | "1" | "yes" | "on"
+                    );
                 }
                 "theme" | "palette" => {
                     if !val.is_empty() {

@@ -1,12 +1,19 @@
-use std::f64::consts::PI;
-
-use crate::config::{Config, Position, Rgba};
-use crate::ffi;
+use crate::config::{Config, Rgba};
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct DotGeometry {
     pub cx: f64,
     pub cy: f64,
+    pub radius: f64,
+    pub color: Rgba,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct CapsuleGeometry {
+    pub ax: f64,
+    pub ay: f64,
+    pub bx: f64,
+    pub by: f64,
     pub radius: f64,
     pub color: Rgba,
 }
@@ -17,22 +24,41 @@ pub struct PillLayout {
     pub height: i32,
     pub vertical: bool,
     pub dots: Vec<DotGeometry>,
+    pub active_capsule: Option<CapsuleGeometry>,
 }
 
 pub fn dot_count(cfg: &Config, active_ws: usize, occ_max: usize) -> usize {
-    let hi = occ_max.max(active_ws);
+    let capped_active = if active_ws <= cfg.max_workspaces {
+        active_ws
+    } else {
+        0
+    };
+    let hi = occ_max.max(capped_active);
     hi.clamp(cfg.persistent_workspaces, cfg.max_workspaces)
 }
 
+#[cfg(test)]
 pub fn compute_pill_layout(
     cfg: &Config,
     active_ws: usize,
     occupied: &[bool],
     occ_max: usize,
 ) -> PillLayout {
+    compute_pill_layout_morphed(cfg, active_ws, active_ws, 1.0, occupied, occ_max)
+}
+
+pub fn compute_pill_layout_morphed(
+    cfg: &Config,
+    active_ws: usize,
+    prev_ws: usize,
+    morph_t: f64,
+    occupied: &[bool],
+    occ_max: usize,
+) -> PillLayout {
     let n = dot_count(cfg, active_ws, occ_max);
-    let long_axis =
-        cfg.pad_h * 2 + (n.saturating_sub(1) as i32) * cfg.dot_spacing + (cfg.active_radius * 2.0) as i32;
+    let long_axis = cfg.pad_h * 2
+        + (n.saturating_sub(1) as i32) * cfg.dot_spacing
+        + (cfg.active_radius * 2.0) as i32;
     let short_axis = cfg.pad_v * 2 + (cfg.active_radius * 2.0) as i32;
 
     let vertical = cfg.position.is_vertical();
@@ -43,18 +69,32 @@ pub fn compute_pill_layout(
     };
 
     let span = (n.saturating_sub(1) as f64) * f64::from(cfg.dot_spacing);
-    let start = ((if vertical { f64::from(height) } else { f64::from(width) }) - span) * 0.5;
-    let center_cross = (if vertical { f64::from(width) } else { f64::from(height) }) * 0.5;
+    let start = ((if vertical {
+        f64::from(height)
+    } else {
+        f64::from(width)
+    }) - span)
+        * 0.5;
+    let center_cross = (if vertical {
+        f64::from(width)
+    } else {
+        f64::from(height)
+    }) * 0.5;
+
+    let dot_center = |ws: usize| -> (f64, f64) {
+        let i = ws.saturating_sub(1);
+        let offset = start + (i as f64) * f64::from(cfg.dot_spacing);
+        if vertical {
+            (center_cross, offset)
+        } else {
+            (offset, center_cross)
+        }
+    };
 
     let mut dots = Vec::with_capacity(n);
     for i in 0..n {
         let ws = i + 1;
-        let offset = start + (i as f64) * f64::from(cfg.dot_spacing);
-        let (cx, cy) = if vertical {
-            (center_cross, offset)
-        } else {
-            (offset, center_cross)
-        };
+        let (cx, cy) = dot_center(ws);
 
         let (color, radius) = if ws == active_ws {
             (cfg.palette.active, cfg.active_radius)
@@ -72,68 +112,172 @@ pub fn compute_pill_layout(
         });
     }
 
+    // Active-dot stretching capsule interpolation between prev_ws and active_ws
+    let active_capsule = if active_ws >= 1 && active_ws <= n {
+        let (to_x, to_y) = dot_center(active_ws);
+        let (from_x, from_y) = if prev_ws >= 1 && prev_ws <= n {
+            dot_center(prev_ws)
+        } else {
+            (to_x, to_y)
+        };
+        let t = morph_t.clamp(0.0, 1.0);
+        // Leading edge eases out fast; trailing edge eases in slower -> capsule stretch
+        let inv = 1.0 - t;
+        let t_head = 1.0 - inv * inv * inv;
+        let t_tail = t * t * t;
+
+        Some(CapsuleGeometry {
+            ax: from_x + (to_x - from_x) * t_tail,
+            ay: from_y + (to_y - from_y) * t_tail,
+            bx: from_x + (to_x - from_x) * t_head,
+            by: from_y + (to_y - from_y) * t_head,
+            radius: cfg.active_radius,
+            color: cfg.palette.active,
+        })
+    } else {
+        None
+    };
+
     PillLayout {
         width,
         height,
         vertical,
         dots,
+        active_capsule,
     }
 }
 
-/// Draw the pill capsule (horizontal or 90°-rotated vertical) and workspace dots via Cairo.
-pub unsafe fn draw_pill(
-    cr: *mut ffi::cairo_t,
-    alloc_w: f64,
-    alloc_h: f64,
+/// Signed-distance-field coverage `[0.0, 1.0]` for a 2D capsule `(ax, ay) -> (bx, by)` with radius `r`.
+#[inline]
+pub fn sdf_capsule_coverage(
+    px: f64,
+    py: f64,
+    ax: f64,
+    ay: f64,
+    bx: f64,
+    by: f64,
+    r: f64,
+) -> f64 {
+    let pax = px - ax;
+    let pay = py - ay;
+    let bax = bx - ax;
+    let bay = by - ay;
+    let ba_dot = bax * bax + bay * bay;
+    let h = if ba_dot > 1e-9 {
+        ((pax * bax + pay * bay) / ba_dot).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let dx = pax - bax * h;
+    let dy = pay - bay * h;
+    let dist = (dx * dx + dy * dy).sqrt() - r;
+    (0.5 - dist).clamp(0.0, 1.0)
+}
+
+/// Rasterizes the frosted pill background, workspace dots, and morphing active capsule
+/// directly into a Wayland `ARGB8888` shared-memory pixel buffer (`0xAARRGGBB` premultiplied).
+pub fn rasterize_pill_argb8888(
+    pixels: &mut [u32],
+    width: u32,
+    height: u32,
     opacity: f64,
     bg: Rgba,
     layout: &PillLayout,
+    active_ws: usize,
 ) {
-    if opacity < 0.001 || alloc_w <= 1.0 || alloc_h <= 1.0 {
+    let total = (width * height) as usize;
+    if pixels.len() < total {
+        return;
+    }
+    if opacity < 0.001 || width <= 1 || height <= 1 {
+        pixels[..total].fill(0);
         return;
     }
 
-    ffi::cairo_new_sub_path(cr);
-    if layout.vertical {
-        // 90-degree rotated vertical capsule: semicircular caps at top and bottom
-        let r = (alloc_w * 0.5).min(alloc_h * 0.5);
-        ffi::cairo_arc(cr, r, r, r, PI, 2.0 * PI);
-        ffi::cairo_arc(cr, r, alloc_h - r, r, 0.0, PI);
+    let w = f64::from(width);
+    let h = f64::from(height);
+    let (pill_ax, pill_ay, pill_bx, pill_by, pill_r) = if layout.vertical {
+        let r = (w * 0.5).min(h * 0.5);
+        (r, r, r, h - r, r)
     } else {
-        // Horizontal capsule: semicircular caps at left and right
-        let r = (alloc_h * 0.5).min(alloc_w * 0.5);
-        ffi::cairo_arc(cr, r, r, r, PI * 0.5, PI * 1.5);
-        ffi::cairo_arc(cr, alloc_w - r, r, r, PI * 1.5, PI * 0.5);
-    }
-    ffi::cairo_close_path(cr);
-    ffi::cairo_set_source_rgba(cr, bg.r, bg.g, bg.b, bg.a * opacity);
-    ffi::cairo_fill(cr);
+        let r = (h * 0.5).min(w * 0.5);
+        (r, r, w - r, r, r)
+    };
 
-    for dot in &layout.dots {
-        ffi::cairo_set_source_rgba(
-            cr,
-            dot.color.r,
-            dot.color.g,
-            dot.color.b,
-            dot.color.a * opacity,
-        );
-        ffi::cairo_arc(cr, dot.cx, dot.cy, dot.radius, 0.0, PI * 2.0);
-        ffi::cairo_fill(cr);
-    }
-}
+    for y in 0..height {
+        let py = f64::from(y) + 0.5;
+        let row_off = (y * width) as usize;
 
-pub const fn layer_edge_for_position(pos: Position) -> i32 {
-    match pos {
-        Position::Left => ffi::GTK_LAYER_SHELL_EDGE_LEFT,
-        Position::Right => ffi::GTK_LAYER_SHELL_EDGE_RIGHT,
-        Position::Top => ffi::GTK_LAYER_SHELL_EDGE_TOP,
-        Position::Bottom => ffi::GTK_LAYER_SHELL_EDGE_BOTTOM,
+        for x in 0..width {
+            let px = f64::from(x) + 0.5;
+
+            let bg_cov = sdf_capsule_coverage(px, py, pill_ax, pill_ay, pill_bx, pill_by, pill_r);
+            if bg_cov <= 0.0 {
+                pixels[row_off + x as usize] = 0;
+                continue;
+            }
+
+            let mut out_a = bg.a * opacity * bg_cov;
+            let mut out_r = bg.r * out_a;
+            let mut out_g = bg.g * out_a;
+            let mut out_b = bg.b * out_a;
+
+            // Composite non-active dots
+            for (idx, dot) in layout.dots.iter().enumerate() {
+                if idx + 1 == active_ws && layout.active_capsule.is_some() {
+                    continue;
+                }
+                // Fast bounding-box reject before sqrt
+                if (px - dot.cx).abs() > dot.radius + 1.0 || (py - dot.cy).abs() > dot.radius + 1.0
+                {
+                    continue;
+                }
+                let cov =
+                    sdf_capsule_coverage(px, py, dot.cx, dot.cy, dot.cx, dot.cy, dot.radius);
+                if cov > 0.0 {
+                    let src_a = dot.color.a * opacity * cov;
+                    let inv_a = 1.0 - src_a;
+                    out_r = dot.color.r * src_a + out_r * inv_a;
+                    out_g = dot.color.g * src_a + out_g * inv_a;
+                    out_b = dot.color.b * src_a + out_b * inv_a;
+                    out_a = src_a + out_a * inv_a;
+                }
+            }
+
+            // Composite morphing active-dot capsule
+            if let Some(cap) = &layout.active_capsule {
+                let min_x = cap.ax.min(cap.bx) - cap.radius - 1.0;
+                let max_x = cap.ax.max(cap.bx) + cap.radius + 1.0;
+                let min_y = cap.ay.min(cap.by) - cap.radius - 1.0;
+                let max_y = cap.ay.max(cap.by) + cap.radius + 1.0;
+
+                if px >= min_x && px <= max_x && py >= min_y && py <= max_y {
+                    let cov =
+                        sdf_capsule_coverage(px, py, cap.ax, cap.ay, cap.bx, cap.by, cap.radius);
+                    if cov > 0.0 {
+                        let src_a = cap.color.a * opacity * cov;
+                        let inv_a = 1.0 - src_a;
+                        out_r = cap.color.r * src_a + out_r * inv_a;
+                        out_g = cap.color.g * src_a + out_g * inv_a;
+                        out_b = cap.color.b * src_a + out_b * inv_a;
+                        out_a = src_a + out_a * inv_a;
+                    }
+                }
+            }
+
+            let a8 = (out_a.clamp(0.0, 1.0) * 255.0 + 0.5) as u32;
+            let r8 = (out_r.clamp(0.0, 1.0) * 255.0 + 0.5).min(a8 as f64) as u32;
+            let g8 = (out_g.clamp(0.0, 1.0) * 255.0 + 0.5).min(a8 as f64) as u32;
+            let b8 = (out_b.clamp(0.0, 1.0) * 255.0 + 0.5).min(a8 as f64) as u32;
+            pixels[row_off + x as usize] = (a8 << 24) | (r8 << 16) | (g8 << 8) | b8;
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Position;
 
     #[test]
     fn horizontal_and_vertical_pill_rotation_swaps_axes_and_dot_coordinates() {
@@ -145,7 +289,6 @@ mod tests {
         assert!(!horiz.vertical);
         assert!(horiz.width > horiz.height);
         assert_eq!(horiz.dots.len(), 5);
-        // Horizontal: all dots share the same Y center, X increases
         assert!((horiz.dots[0].cy - horiz.dots[4].cy).abs() < 1e-6);
         assert!(horiz.dots[4].cx > horiz.dots[0].cx);
 
@@ -154,8 +297,37 @@ mod tests {
         assert!(vert.vertical);
         assert_eq!(vert.width, horiz.height);
         assert_eq!(vert.height, horiz.width);
-        // Vertical (rotated 90 deg): all dots share the same X center, Y increases
         assert!((vert.dots[0].cx - vert.dots[4].cx).abs() < 1e-6);
         assert!(vert.dots[4].cy > vert.dots[0].cy);
+    }
+
+    #[test]
+    fn active_dot_capsule_stretches_during_morph_and_converges_at_end() {
+        let cfg = Config::default();
+        let occ = vec![false, true, false, true, false, false];
+
+        let mid = compute_pill_layout_morphed(&cfg, 4, 1, 0.5, &occ, 4);
+        let cap_mid = mid.active_capsule.unwrap();
+        assert!(cap_mid.bx > cap_mid.ax + 10.0); // stretched capsule between dot 1 and dot 4
+
+        let done = compute_pill_layout_morphed(&cfg, 4, 1, 1.0, &occ, 4);
+        let cap_done = done.active_capsule.unwrap();
+        assert!((cap_done.bx - cap_done.ax).abs() < 1e-6);
+        assert!((cap_done.bx - done.dots[3].cx).abs() < 1e-6);
+
+        let mut buf = vec![0u32; (mid.width * mid.height) as usize];
+        rasterize_pill_argb8888(
+            &mut buf,
+            mid.width as u32,
+            mid.height as u32,
+            1.0,
+            cfg.palette.bg,
+            &mid,
+            4,
+        );
+        // Center pixel of the pill must be non-transparent
+        let center_idx =
+            ((mid.height as usize / 2) * mid.width as usize) + (mid.width as usize / 2);
+        assert!((buf[center_idx] >> 24) > 0);
     }
 }
