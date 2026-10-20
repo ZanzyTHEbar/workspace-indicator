@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Omarchy theme-set hook — reloads workspace-indicator palette on theme switch.
+command -v workspace-indicator >/dev/null 2>&1 && workspace-indicator --reload >/dev/null 2>&1 || true

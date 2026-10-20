@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install workspace-indicator binary, focus watcher, systemd unit, and Hyprland drop-in.
+# Install workspace-indicator binary, systemd unit, Hyprland (.conf + .lua), and Omarchy hook.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -7,7 +7,9 @@ PREFIX="${PREFIX:-$HOME/.local}"
 BINDIR="${BINDIR:-$PREFIX/bin}"
 XDG_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}"
 SYSTEMD_USER_DIR="${SYSTEMD_USER_DIR:-$XDG_CONFIG/systemd/user}"
-HYPR_CONF_DIR="${HYPR_CONF_DIR:-$XDG_CONFIG/hypr/config}"
+HYPR_DIR="${HYPR_DIR:-$XDG_CONFIG/hypr}"
+HYPR_CONF_DIR="${HYPR_CONF_DIR:-$HYPR_DIR/config}"
+OMARCHY_HOOK_DIR="${OMARCHY_HOOK_DIR:-$XDG_CONFIG/omarchy/hooks/theme-set.d}"
 
 /usr/bin/install -Dm755 "$ROOT_DIR/workspace-indicator" "$BINDIR/workspace-indicator"
 /usr/bin/install -Dm755 "$ROOT_DIR/scripts/workspace-indicator-focusd" "$BINDIR/workspace-indicator-focusd"
@@ -16,3 +18,14 @@ HYPR_CONF_DIR="${HYPR_CONF_DIR:-$XDG_CONFIG/hypr/config}"
 if [[ -d "$HYPR_CONF_DIR" ]]; then
   /usr/bin/install -Dm644 "$ROOT_DIR/hyprland/workspace-indicator.conf" "$HYPR_CONF_DIR/workspace-indicator.local.conf"
 fi
+
+if [[ -d "$HYPR_DIR" ]]; then
+  /usr/bin/install -Dm644 "$ROOT_DIR/hyprland/workspace-indicator.lua" "$HYPR_DIR/workspace-indicator.lua"
+fi
+
+if [[ -d "$XDG_CONFIG/omarchy" ]]; then
+  /usr/bin/install -Dm755 "$ROOT_DIR/omarchy/theme-set-hook" "$OMARCHY_HOOK_DIR/workspace-indicator"
+fi
+
+# Re-render Hyprland .conf and .lua with any user-configured keybind from config.{lua,toml,conf}
+"$BINDIR/workspace-indicator" --sync-hyprland 2>/dev/null || true
