@@ -1,6 +1,8 @@
 # workspace-indicator
 
-Hyper-performant Wayland workspace OSD for **Hyprland** (0.56+ `.conf` & `.lua`) and **Omarchy** (Quattro / v4 & v3) written in pure Rust (`std` + direct GTK3/layer-shell/Cairo FFI).
+![workspace-indicator demo](assets/demo.gif)
+
+Hyper-performant Wayland workspace OSD for **Hyprland** (0.56+ `.conf` & `.lua`) and **Omarchy** (Quattro / v4 & v3) written in pure Rust (`std` + raw Wayland `wl_shm` + `zwlr_layer_shell_v1` + CPU SDF rasterizer).
 
 ## Features
 
