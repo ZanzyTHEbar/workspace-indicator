@@ -73,6 +73,16 @@ const ZWLR_LAYER_SURFACE_DESTROY: u16 = 7;
 const ZWLR_LAYER_SURFACE_CONFIGURE: u16 = 0;
 const ZWLR_LAYER_SURFACE_CLOSED: u16 = 1;
 
+// wp_viewporter & wp_viewport requests
+const WP_VIEWPORTER_GET_VIEWPORT: u16 = 1;
+const WP_VIEWPORT_DESTROY: u16 = 0;
+const WP_VIEWPORT_SET_DESTINATION: u16 = 2;
+
+// wp_fractional_scale_manager_v1 & wp_fractional_scale_v1 requests/events
+const WP_FRACTIONAL_SCALE_MGR_GET_FRACTIONAL_SCALE: u16 = 1;
+const WP_FRACTIONAL_SCALE_DESTROY: u16 = 0;
+const WP_FRACTIONAL_SCALE_PREFERRED_SCALE: u16 = 0;
+
 const ANCHOR_TOP: u32 = 1;
 const ANCHOR_BOTTOM: u32 = 2;
 const ANCHOR_LEFT: u32 = 4;
@@ -120,11 +130,16 @@ pub struct WaylandClient {
     compositor_version: u32,
     shm_id: u32,
     layer_shell_id: u32,
+    viewporter_id: u32,
+    fractional_scale_mgr_id: u32,
     empty_region_id: u32,
     pub outputs: Vec<WaylandOutput>,
     shm_pool: Option<ShmPool>,
     surface_id: u32,
     layer_surface_id: u32,
+    viewport_id: u32,
+    fractional_scale_id: u32,
+    preferred_scale_120: u32,
     bound_output_id: u32,
     applied_position: Option<Position>,
     applied_margin: i32,
@@ -149,11 +164,16 @@ impl WaylandClient {
             compositor_version: 1,
             shm_id: 0,
             layer_shell_id: 0,
+            viewporter_id: 0,
+            fractional_scale_mgr_id: 0,
             empty_region_id: 0,
             outputs: Vec::new(),
             shm_pool: None,
             surface_id: 0,
             layer_surface_id: 0,
+            viewport_id: 0,
+            fractional_scale_id: 0,
+            preferred_scale_120: 120,
             bound_output_id: 0,
             applied_position: None,
             applied_margin: -1,
@@ -371,6 +391,14 @@ impl WaylandClient {
             } else if opcode == ZWLR_LAYER_SURFACE_CLOSED {
                 self.destroy_surface()?;
             }
+        } else if sender_id == self.fractional_scale_id && self.fractional_scale_id != 0 {
+            if opcode == WP_FRACTIONAL_SCALE_PREFERRED_SCALE && payload.len() >= 4 {
+                let scale_120 = u32::from_ne_bytes(payload[0..4].try_into().unwrap()).max(60);
+                if self.preferred_scale_120 != scale_120 {
+                    self.preferred_scale_120 = scale_120;
+                    self.needs_redraw = true;
+                }
+            }
         } else if let Some(pos) = self.active_buffers.iter().position(|&b| b == sender_id) {
             if opcode == WL_BUFFER_RELEASE {
                 let buf_id = self.active_buffers.swap_remove(pos);
@@ -425,6 +453,16 @@ impl WaylandClient {
                 let id = self.alloc_id();
                 self.layer_shell_id = id;
                 self.bind_global(name, iface, v, id)?;
+            }
+            "wp_viewporter" if self.viewporter_id == 0 => {
+                let id = self.alloc_id();
+                self.viewporter_id = id;
+                self.bind_global(name, iface, 1, id)?;
+            }
+            "wp_fractional_scale_manager_v1" if self.fractional_scale_mgr_id == 0 => {
+                let id = self.alloc_id();
+                self.fractional_scale_mgr_id = id;
+                self.bind_global(name, iface, 1, id)?;
             }
             "wl_output" => {
                 let v = version.min(4);
@@ -495,9 +533,7 @@ impl WaylandClient {
             self.destroy_surface()?;
 
             let surface_id = self.alloc_id();
-            let layer_surface_id = self.alloc_id();
             self.surface_id = surface_id;
-            self.layer_surface_id = layer_surface_id;
             self.bound_output_id = output_id;
             self.configured = false;
 
@@ -512,6 +548,28 @@ impl WaylandClient {
                 &[self.empty_region_id],
             )?;
 
+            if self.viewporter_id != 0 {
+                let vp_id = self.alloc_id();
+                self.viewport_id = vp_id;
+                self.send_msg(
+                    self.viewporter_id,
+                    WP_VIEWPORTER_GET_VIEWPORT,
+                    &[vp_id, surface_id],
+                )?;
+            }
+
+            if self.fractional_scale_mgr_id != 0 {
+                let fs_id = self.alloc_id();
+                self.fractional_scale_id = fs_id;
+                self.send_msg(
+                    self.fractional_scale_mgr_id,
+                    WP_FRACTIONAL_SCALE_MGR_GET_FRACTIONAL_SCALE,
+                    &[fs_id, surface_id],
+                )?;
+            }
+
+            let layer_surface_id = self.alloc_id();
+            self.layer_surface_id = layer_surface_id;
             let mut words = Vec::with_capacity(8);
             words.push(layer_surface_id);
             words.push(surface_id);
@@ -592,7 +650,35 @@ impl WaylandClient {
         Ok(())
     }
 
+    pub fn scale_factor(&self) -> f64 {
+        if self.viewport_id != 0 && self.fractional_scale_id != 0 {
+            f64::from(self.preferred_scale_120) / 120.0
+        } else {
+            1.0
+        }
+    }
+
+    pub fn physical_size(&self, logical_w: u32, logical_h: u32) -> (u32, u32) {
+        if self.viewport_id != 0 && self.fractional_scale_id != 0 {
+            let s = self.preferred_scale_120;
+            (
+                ((logical_w * s + 60) / 120).max(1),
+                ((logical_h * s + 60) / 120).max(1),
+            )
+        } else {
+            (logical_w, logical_h)
+        }
+    }
+
     pub fn destroy_surface(&mut self) -> io::Result<()> {
+        if self.fractional_scale_id != 0 {
+            let _ = self.send_msg(self.fractional_scale_id, WP_FRACTIONAL_SCALE_DESTROY, &[]);
+            self.fractional_scale_id = 0;
+        }
+        if self.viewport_id != 0 {
+            let _ = self.send_msg(self.viewport_id, WP_VIEWPORT_DESTROY, &[]);
+            self.viewport_id = 0;
+        }
         if self.layer_surface_id != 0 {
             let _ = self.send_msg(self.layer_surface_id, ZWLR_LAYER_SURFACE_DESTROY, &[]);
             self.layer_surface_id = 0;
@@ -653,6 +739,13 @@ impl WaylandClient {
         self.active_buffers.push(buffer_id);
 
         self.send_msg(self.surface_id, WL_SURFACE_ATTACH, &[buffer_id, 0, 0])?;
+        if self.viewport_id != 0 && self.applied_size.0 > 0 && self.applied_size.1 > 0 {
+            self.send_msg(
+                self.viewport_id,
+                WP_VIEWPORT_SET_DESTINATION,
+                &[self.applied_size.0, self.applied_size.1],
+            )?;
+        }
         if self.compositor_version >= 4 {
             self.send_msg(
                 self.surface_id,

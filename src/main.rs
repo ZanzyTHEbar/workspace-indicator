@@ -14,7 +14,7 @@ use std::ptr;
 
 use config::{xdg_cache_home, xdg_config_home, xdg_state_home, Config, ConfigLoader, Position};
 use ipc::{Socket2Stream, WorkspaceState};
-use render::{compute_pill_layout_morphed, rasterize_pill_argb8888, PillLayout};
+use render::{compute_pill_layout_morphed, rasterize_pill_argb8888_scaled, PillLayout};
 use wayland::WaylandClient;
 
 const TAG_WAYLAND: u64 = 1;
@@ -264,14 +264,18 @@ impl Daemon {
         if !self.wl.configured {
             return;
         }
-        let w = self.layout.width as u32;
-        let h = self.layout.height as u32;
+        let logical_w = self.layout.width as u32;
+        let logical_h = self.layout.height as u32;
+        let (phys_w, phys_h) = self.wl.physical_size(logical_w, logical_h);
+        let scale = self.wl.scale_factor();
         let opacity = self.opacity;
         let bg = self.cfg.palette.bg;
         let active_ws = self.ws_state.active_ws;
         let layout = &self.layout;
-        let _ = self.wl.present_frame(w, h, |pixels| {
-            rasterize_pill_argb8888(pixels, w, h, opacity, bg, layout, active_ws);
+        let _ = self.wl.present_frame(phys_w, phys_h, |pixels| {
+            rasterize_pill_argb8888_scaled(
+                pixels, phys_w, phys_h, scale, opacity, bg, layout, active_ws,
+            );
         });
     }
 
@@ -554,7 +558,8 @@ fn main() {
         for ev in &events[..n as usize] {
             match ev.u64 {
                 TAG_WAYLAND => {
-                    if daemon.wl.dispatch_pending().is_err() {
+                    if let Err(e) = daemon.wl.dispatch_pending() {
+                        eprintln!("workspace-indicator: Wayland error: {e}");
                         running = false;
                         break;
                     }

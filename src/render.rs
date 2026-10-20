@@ -158,7 +158,7 @@ pub fn compute_pill_layout_morphed(
 
 /// Signed-distance-field coverage `[0.0, 1.0]` for a 2D capsule `(ax, ay) -> (bx, by)` with radius `r`.
 #[inline]
-pub fn sdf_capsule_coverage(
+pub fn sdf_capsule_coverage_scaled(
     px: f64,
     py: f64,
     ax: f64,
@@ -166,6 +166,7 @@ pub fn sdf_capsule_coverage(
     bx: f64,
     by: f64,
     r: f64,
+    scale: f64,
 ) -> f64 {
     let pax = px - ax;
     let pay = py - ay;
@@ -180,31 +181,33 @@ pub fn sdf_capsule_coverage(
     let dx = pax - bax * h;
     let dy = pay - bay * h;
     let dist = (dx * dx + dy * dy).sqrt() - r;
-    (0.5 - dist).clamp(0.0, 1.0)
+    (0.5 - dist * scale).clamp(0.0, 1.0)
 }
 
 /// Rasterizes the frosted pill background, workspace dots, and morphing active capsule
-/// directly into a Wayland `ARGB8888` shared-memory pixel buffer (`0xAARRGGBB` premultiplied).
-pub fn rasterize_pill_argb8888(
+/// directly into a Wayland `ARGB8888` shared-memory pixel buffer at fractional `scale`.
+pub fn rasterize_pill_argb8888_scaled(
     pixels: &mut [u32],
-    width: u32,
-    height: u32,
+    phys_width: u32,
+    phys_height: u32,
+    scale: f64,
     opacity: f64,
     bg: Rgba,
     layout: &PillLayout,
     active_ws: usize,
 ) {
-    let total = (width * height) as usize;
+    let total = (phys_width * phys_height) as usize;
     if pixels.len() < total {
         return;
     }
-    if opacity < 0.001 || width <= 1 || height <= 1 {
+    if opacity < 0.001 || phys_width <= 1 || phys_height <= 1 {
         pixels[..total].fill(0);
         return;
     }
 
-    let w = f64::from(width);
-    let h = f64::from(height);
+    let inv_scale = 1.0 / scale.max(0.25);
+    let w = f64::from(layout.width);
+    let h = f64::from(layout.height);
     let (pill_ax, pill_ay, pill_bx, pill_by, pill_r) = if layout.vertical {
         let r = (w * 0.5).min(h * 0.5);
         (r, r, r, h - r, r)
@@ -212,15 +215,17 @@ pub fn rasterize_pill_argb8888(
         let r = (h * 0.5).min(w * 0.5);
         (r, r, w - r, r, r)
     };
+    let aa_pad = inv_scale;
 
-    for y in 0..height {
-        let py = f64::from(y) + 0.5;
-        let row_off = (y * width) as usize;
+    for y in 0..phys_height {
+        let py = (f64::from(y) + 0.5) * inv_scale;
+        let row_off = (y * phys_width) as usize;
 
-        for x in 0..width {
-            let px = f64::from(x) + 0.5;
+        for x in 0..phys_width {
+            let px = (f64::from(x) + 0.5) * inv_scale;
 
-            let bg_cov = sdf_capsule_coverage(px, py, pill_ax, pill_ay, pill_bx, pill_by, pill_r);
+            let bg_cov =
+                sdf_capsule_coverage_scaled(px, py, pill_ax, pill_ay, pill_bx, pill_by, pill_r, scale);
             if bg_cov <= 0.0 {
                 pixels[row_off + x as usize] = 0;
                 continue;
@@ -236,13 +241,14 @@ pub fn rasterize_pill_argb8888(
                 if idx + 1 == active_ws && layout.active_capsule.is_some() {
                     continue;
                 }
-                // Fast bounding-box reject before sqrt
-                if (px - dot.cx).abs() > dot.radius + 1.0 || (py - dot.cy).abs() > dot.radius + 1.0
+                if (px - dot.cx).abs() > dot.radius + aa_pad
+                    || (py - dot.cy).abs() > dot.radius + aa_pad
                 {
                     continue;
                 }
-                let cov =
-                    sdf_capsule_coverage(px, py, dot.cx, dot.cy, dot.cx, dot.cy, dot.radius);
+                let cov = sdf_capsule_coverage_scaled(
+                    px, py, dot.cx, dot.cy, dot.cx, dot.cy, dot.radius, scale,
+                );
                 if cov > 0.0 {
                     let src_a = dot.color.a * opacity * cov;
                     let inv_a = 1.0 - src_a;
@@ -255,14 +261,15 @@ pub fn rasterize_pill_argb8888(
 
             // Composite morphing active-dot capsule
             if let Some(cap) = &layout.active_capsule {
-                let min_x = cap.ax.min(cap.bx) - cap.radius - 1.0;
-                let max_x = cap.ax.max(cap.bx) + cap.radius + 1.0;
-                let min_y = cap.ay.min(cap.by) - cap.radius - 1.0;
-                let max_y = cap.ay.max(cap.by) + cap.radius + 1.0;
+                let min_x = cap.ax.min(cap.bx) - cap.radius - aa_pad;
+                let max_x = cap.ax.max(cap.bx) + cap.radius + aa_pad;
+                let min_y = cap.ay.min(cap.by) - cap.radius - aa_pad;
+                let max_y = cap.ay.max(cap.by) + cap.radius + aa_pad;
 
                 if px >= min_x && px <= max_x && py >= min_y && py <= max_y {
-                    let cov =
-                        sdf_capsule_coverage(px, py, cap.ax, cap.ay, cap.bx, cap.by, cap.radius);
+                    let cov = sdf_capsule_coverage_scaled(
+                        px, py, cap.ax, cap.ay, cap.bx, cap.by, cap.radius, scale,
+                    );
                     if cov > 0.0 {
                         let src_a = cap.color.a * opacity * cov;
                         let inv_a = 1.0 - src_a;
@@ -281,6 +288,19 @@ pub fn rasterize_pill_argb8888(
             pixels[row_off + x as usize] = (a8 << 24) | (r8 << 16) | (g8 << 8) | b8;
         }
     }
+}
+
+#[cfg(test)]
+pub fn rasterize_pill_argb8888(
+    pixels: &mut [u32],
+    width: u32,
+    height: u32,
+    opacity: f64,
+    bg: Rgba,
+    layout: &PillLayout,
+    active_ws: usize,
+) {
+    rasterize_pill_argb8888_scaled(pixels, width, height, 1.0, opacity, bg, layout, active_ws);
 }
 
 #[cfg(test)]
