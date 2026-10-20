@@ -8,9 +8,11 @@ HYPR_DIR         = $(XDG_CONFIG)/hypr
 HYPR_CONF_DIR    = $(HYPR_DIR)/config
 OMARCHY_HOOK_DIR = $(XDG_CONFIG)/omarchy/hooks/theme-set.d
 
-TARGET     = workspace-indicator
-RELEASE_BIN = target/release/$(TARGET)
-ARCHIVE    = workspace-indicator-linux-x86_64.tar.gz
+TARGET       = workspace-indicator
+RUST_TARGET ?= x86_64-unknown-linux-musl
+RELEASE_BIN  = target/$(RUST_TARGET)/release/$(TARGET)
+ARCH_SUFFIX ?= x86_64
+ARCHIVE      = workspace-indicator-linux-$(ARCH_SUFFIX).tar.gz
 
 .PHONY: all build test clean dist install uninstall
 
@@ -20,7 +22,7 @@ $(TARGET): build
 	cp $(RELEASE_BIN) $(TARGET)
 
 build:
-	cargo build --release
+	cargo build --release --target $(RUST_TARGET)
 
 test:
 	cargo test
