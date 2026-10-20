@@ -1,3 +1,5 @@
 /target
+/node_modules
+__pycache__/
 workspace-indicator
 workspace-indicator-linux-*.tar.gz

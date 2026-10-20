@@ -1,0 +1,12 @@
+{
+  "name": "workspace-indicator-release",
+  "private": true,
+  "scripts": {"release": "semantic-release", "test": "python3 scripts/test-release.py"},
+  "devDependencies": {
+    "semantic-release": "^25.0.9",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/exec": "^7.1.0",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^12.0.10"
+  }
+}
