@@ -1,25 +1,52 @@
 # workspace-indicator
 
-![workspace-indicator demo](assets/demo.gif)
+<p align="center">
+  <img src="assets/demo.gif" alt="workspace-indicator demo" width="840" />
+</p>
 
-Hyper-performant Wayland workspace OSD for **Hyprland** (0.56+ `.conf` & `.lua`) and **Omarchy** (Quattro / v4 & v3) written in pure Rust (`std` + raw Wayland `wl_shm` + `zwlr_layer_shell_v1` + CPU SDF rasterizer).
+Hyper-performant Wayland workspace OSD for **Hyprland** (`0.56+` `.conf` & `.lua`) and **Omarchy** (Quattro / v4 & v3) written in pure Rust (`0` crate dependencies, `libc.so.6` only).
 
-## Features
+- **Raw Wayland Wire Protocol (`wl_shm` + `zwlr_layer_shell_v1`):** Speaks the Wayland wire protocol directly over `$WAYLAND_DISPLAY` with a double-buffered `memfd_create` shared-memory pool. Zero GTK, zero Cairo, zero GLib.
+- **Sub-Pixel SDF Capsule Rasterizer & Morph Animation:** Renders the frosted pill, workspace dots, and a stretching active-dot capsule transition through a single analytical Signed Distance Field (SDF) function.
+- **Single-Threaded `epoll` State Machine:** Multiplexes the Wayland socket, Hyprland `.socket2.sock`, `signalfd` (`SIGUSR1`/`SIGUSR2`/`SIGTERM`), `inotify` (live theme/config hot-reload), and `timerfd` in 1 thread (`~2.7 MB` RSS, zero child process forks).
+- **4-Edge Positioning (`top`, `bottom`, `left`, `right`):** `left` and `right` automatically swap axes and rotate the pill 90° vertically.
+- **Omarchy Quattro & Dragonarchy Auto-Theming:** Watches `~/.local/state/omarchy/current/theme/colors.toml` (Omarchy 4), `~/.config/omarchy/current/theme/colors.toml` (Omarchy 3), and `~/.config/current/theme/hyprland-palette.conf` (Dragonarchy) via `inotify`, plus 10 built-in presets (`catppuccin-mocha`, `catppuccin-latte`, `tokyo-night`, `gruvbox`, `nord`, `rose-pine`, `kanagawa`, `everforest`, `matte-black`, `ristretto`).
+- **Dual Hyprland Integration (`.conf` + `.lua`) & Live Keybind Sync:** Emits both `workspace-indicator.local.conf` and `workspace-indicator.lua` (`hl.layer_rule` + `o.bind`/`hl.bind`), and dynamically applies custom keybinds over `.socket.sock`.
 
-- **Zero-fork Hyprland IPC:** Queries `.socket.sock` (`j/activeworkspace`, `j/workspaces`, `j/monitors`) directly over Unix domain sockets and listens on `.socket2.sock` (`workspacev2`, `focusedmonv2`, `createworkspacev2`, `destroyworkspacev2`, `moveworkspacev2`) with atomic event coalescing.
-- **4-Edge Positioning & 90° Pill Rotation:** Set `position = "bottom" | "top" | "left" | "right"`. `left` and `right` automatically rotate the pill 90° vertically.
-- **Omarchy & Dragonarchy Auto-Theming:** Automatically discovers `~/.local/state/omarchy/current/theme/colors.toml` (Omarchy 4 Quattro), `~/.config/omarchy/current/theme/colors.toml` (Omarchy 3), or `~/.config/current/theme/hyprland-palette.conf` (Dragonarchy), plus built-in presets (`catppuccin-mocha`, `catppuccin-latte`, `tokyo-night`, `gruvbox`, `nord`, `rose-pine`, `kanagawa`, `everforest`, `matte-black`, `ristretto`) and custom color overrides.
-- **Lua, TOML, and `.conf` Configuration:** Configure via `~/.config/workspace-indicator/config.lua`, `config.toml`, or `config.conf` with automatic `mtime` hot-reload.
-- **Custom Keybinds & Dual Hyprland Output:** Generates both `workspace-indicator.local.conf` and `workspace-indicator.lua` (`hl.layer_rule` + `o.bind`/`hl.bind`).
+## Quick Install (Pre-Built Release)
 
-## Example `~/.config/workspace-indicator/config.lua`
+```sh
+ws_tmp="$(mktemp -d)"
+curl -fsSL https://github.com/ZanzyTHEbar/workspace-indicator/releases/latest/download/workspace-indicator-linux-x86_64.tar.gz | tar -xz -C "$ws_tmp"
+"$ws_tmp/install.sh"
+rm -rf "$ws_tmp"
+systemctl --user daemon-reload && systemctl --user enable --now workspace-indicator.service
+```
+
+## Build from Source
+
+Requires only `rustc`/`cargo` (no system `-dev` headers needed):
+
+```sh
+make
+make install
+```
+
+## Configuration (`~/.config/workspace-indicator/config.lua` or `config.toml`)
 
 ```lua
 return {
-  position = "bottom", -- "bottom" | "top" | "left" | "right" (left/right rotate pill 90deg)
-  margin = 60,
+  position = "bottom",      -- "bottom" | "top" | "left" | "right" (left/right rotate pill 90deg)
+  margin = 60,              -- distance in px from anchored screen edge
+  per_monitor = false,      -- true = only show workspaces belonging to the focused monitor
   keybind = "SUPER + grave",
-  theme = "auto",      -- "auto" | "omarchy" | "dragonarchy" | "tokyo-night" | "catppuccin-mocha" | ...
+  theme = "auto",           -- "auto" | "omarchy" | "dragonarchy" | "tokyo-night" | "catppuccin-mocha" | ...
+  display_ms = 1200,
+  fade_in_ms = 150,
+  fade_out_ms = 300,
+  debounce_ms = 80,
+  persistent_workspaces = 5,
+  max_workspaces = 10,
   colors = {
     -- Optional explicit overrides (#RRGGBB, #RRGGBBAA, or rgba(RRGGBBAA))
     -- background = "#1a1b26",
@@ -28,4 +55,15 @@ return {
     -- empty      = "#414868",
   },
 }
+```
+
+## CLI
+
+```sh
+workspace-indicator --peek                  # Manually reveal the OSD (SIGUSR1)
+workspace-indicator --reload                # Force reload config & theme palette (SIGUSR2)
+workspace-indicator --position right        # Run anchored to right edge (90° vertical pill)
+workspace-indicator --sync-hyprland         # Write Hyprland .conf and .lua integration files
+workspace-indicator --print-hyprland-conf   # Print Hyprland .conf snippet
+workspace-indicator --print-hyprland-lua    # Print Hyprland 0.56+ / Omarchy Quattro Lua snippet
 ```
