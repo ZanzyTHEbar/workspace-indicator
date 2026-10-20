@@ -566,11 +566,11 @@ pub fn parse_kv_pairs(content: &str) -> Vec<(String, String)> {
                 .and_then(|s| s.trim_end_matches(',').strip_suffix('}'))
             {
                 let sub_sec = k_trim.to_ascii_lowercase();
-                for part in inner.split(',') {
+                for part in split_top_level_commas(inner) {
                     if let Some((sk, sv)) = part.split_once('=') {
                         let sk_clean = sk.trim().trim_matches(['"', '\'']);
                         let sv_clean = sv.trim().trim_end_matches([',', ';']).trim();
-                        let full_key = if sub_sec.is_empty() {
+                        let full_key = if sub_sec.is_empty() || sub_sec == "return" || sub_sec == "config" || sub_sec == "indicator" {
                             sk_clean.to_string()
                         } else {
                             format!("{sub_sec}_{sk_clean}")
@@ -594,7 +594,38 @@ pub fn parse_kv_pairs(content: &str) -> Vec<(String, String)> {
     out
 }
 
+fn split_top_level_commas(s: &str) -> Vec<&str> {
+    let bytes = s.as_bytes();
+    let mut out = Vec::new();
+    let mut start = 0usize;
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut i = 0usize;
+
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' if in_single || in_double => {
+                i += 2;
+                continue;
+            }
+            b'\'' if !in_double => in_single = !in_single,
+            b'"' if !in_single => in_double = !in_double,
+            b',' if !in_single && !in_double => {
+                out.push(&s[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    if start <= bytes.len() {
+        out.push(&s[start..]);
+    }
+    out
+}
+
 fn strip_comments(line: &str) -> &str {
+    let trimmed_start = line.bytes().position(|b| !b.is_ascii_whitespace()).unwrap_or(0);
     let bytes = line.as_bytes();
     let mut in_single = false;
     let mut in_double = false;
@@ -609,9 +640,11 @@ fn strip_comments(line: &str) -> &str {
             b'\'' if !in_double => in_single = !in_single,
             b'"' if !in_single => in_double = !in_double,
             b'#' if !in_single && !in_double => {
-                // Only treat '#' as a comment if preceded by start-of-line or whitespace
-                // so unquoted hex literals like `#89b4fa` after `=` are preserved.
-                if i == 0 || bytes[i - 1].is_ascii_whitespace() {
+                // '#' at start of trimmed line is always a comment (even `#facade`).
+                if i == trimmed_start {
+                    return &line[..i];
+                }
+                if bytes[i - 1].is_ascii_whitespace() || bytes[i - 1] == b'=' {
                     let after = &line[i + 1..];
                     let hex_len = after.bytes().take_while(|b| b.is_ascii_hexdigit()).count();
                     if !(hex_len == 6 || hex_len == 8) {
@@ -821,15 +854,12 @@ $comment = rgba(928374ff)
     fn parses_lua_and_toml_user_config() {
         let lua_cfg = r##"
 -- Lua configuration for workspace-indicator
-return {
-  position = "right",
-  margin = 48,
-  keybind = "SUPER + TAB",
-  theme = "tokyo-night",
-  colors = {
-    active = "#ff9e64",
-    background = "#1a1b26",
-  },
+#facade = "ignored comment starting with 6 hex chars"
+config = { keybind = "SUPER, TAB", position = "right", margin = 48 }
+theme = "tokyo-night"
+colors = {
+  active = "#ff9e64",
+  background = "#1a1b26",
 }
 "##;
         let mut cfg = Config::default();

@@ -77,12 +77,31 @@ fn publish_lock_pid(file: &mut fs::File) {
 
 fn signal_running_instance(sig: i32) -> bool {
     let path = lock_file_path();
-    if let Ok(text) = fs::read_to_string(path) {
+    let Ok(file) = OpenOptions::new().read(true).write(true).open(&path) else {
+        return false;
+    };
+    // Verify the exclusive flock is actively held by a running instance.
+    // If flock succeeds, no daemon is running; drop the lock and do not signal stale PIDs.
+    let rc = unsafe { ffi::flock(file.as_raw_fd(), ffi::LOCK_EX | ffi::LOCK_NB) };
+    if rc == 0 {
+        let _ = file.set_len(0);
+        return false;
+    }
+
+    if let Ok(text) = fs::read_to_string(&path) {
         if let Ok(pid) = text.trim().parse::<i32>() {
-            if pid > 1 && unsafe { ffi::kill(pid, sig) } == 0 {
-                return true;
+            if pid > 1 && is_workspace_indicator_pid(pid) {
+                return unsafe { ffi::kill(pid, sig) } == 0;
             }
         }
+    }
+    false
+}
+
+fn is_workspace_indicator_pid(pid: i32) -> bool {
+    let comm_path = format!("/proc/{pid}/comm");
+    if let Ok(comm) = fs::read_to_string(comm_path) {
+        return comm.trim().starts_with("workspace-indic");
     }
     false
 }
@@ -581,4 +600,6 @@ fn main() {
     unsafe {
         ffi::gtk_main();
     }
+
+    let _ = lock_file.set_len(0);
 }

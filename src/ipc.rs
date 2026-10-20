@@ -76,7 +76,7 @@ pub fn parse_workspace_state(
     let active_ws = if raw_active_id < 1 {
         0 // special workspace (e.g. scratchpad -99)
     } else {
-        (raw_active_id as usize).min(max_ws)
+        raw_active_id as usize
     };
 
     let active_mon_name = json_key_string(active_json, "monitor");
@@ -249,49 +249,47 @@ pub fn split_top_level_objects(js: &str) -> Vec<&str> {
     out
 }
 
-/// Replaces nested `{ ... }` blocks at depth >= 2 with `{}` while preserving strings.
+/// Replaces nested `{ ... }` blocks at depth >= 2 with `{}` while preserving UTF-8 and strings.
 fn strip_nested_objects(obj: &str) -> String {
-    let bytes = obj.as_bytes();
     let mut out = String::with_capacity(obj.len());
     let mut depth = 0i32;
     let mut in_str = false;
-    let mut i = 0usize;
+    let mut chars = obj.chars();
 
-    while i < bytes.len() {
-        let b = bytes[i];
+    while let Some(ch) = chars.next() {
         if in_str {
-            if b == b'\\' && i + 1 < bytes.len() {
-                if depth <= 1 {
-                    out.push(b as char);
-                    out.push(bytes[i + 1] as char);
+            if ch == '\\' {
+                if let Some(escaped) = chars.next() {
+                    if depth <= 1 {
+                        out.push(ch);
+                        out.push(escaped);
+                    }
                 }
-                i += 2;
                 continue;
             }
-            if b == b'"' {
+            if ch == '"' {
                 in_str = false;
             }
             if depth <= 1 {
-                out.push(b as char);
+                out.push(ch);
             }
-            i += 1;
             continue;
         }
 
-        match b {
-            b'"' => {
+        match ch {
+            '"' => {
                 in_str = true;
                 if depth <= 1 {
                     out.push('"');
                 }
             }
-            b'{' => {
+            '{' => {
                 depth += 1;
                 if depth <= 2 {
                     out.push('{');
                 }
             }
-            b'}' => {
+            '}' => {
                 if depth <= 2 {
                     out.push('}');
                 }
@@ -301,11 +299,10 @@ fn strip_nested_objects(obj: &str) -> String {
             }
             _ => {
                 if depth <= 1 {
-                    out.push(b as char);
+                    out.push(ch);
                 }
             }
         }
-        i += 1;
     }
     out
 }
@@ -439,8 +436,8 @@ mod tests {
         },{
             "id": 1,
             "name": "DP-2",
-            "make": "Dell Inc.",
-            "model": "U2723QE",
+            "make": "Dell Inc.®",
+            "model": "U2723QE™",
             "x": 1920,
             "y": 0,
             "width": 3840,
@@ -458,8 +455,15 @@ mod tests {
         assert_eq!(state.occ_max, 3);
         let mon = state.target_monitor.unwrap();
         assert_eq!(mon.name, "DP-2");
+        assert_eq!(mon.make, "Dell Inc.®");
+        assert_eq!(mon.model, "U2723QE™");
         assert_eq!(mon.x, 1920);
         assert_eq!(mon.width, 3840);
+
+        // Workspace > max_workspaces must not clamp active_ws to max_workspaces
+        let high_active = r#"{ "id": 12, "name": "12", "monitor": "DP-2" }"#;
+        let high_state = parse_workspace_state(high_active, workspaces, monitors, 10);
+        assert_eq!(high_state.active_ws, 12);
     }
 
     #[test]
