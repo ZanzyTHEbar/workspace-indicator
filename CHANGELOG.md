@@ -1,3 +1,10 @@
+## [0.4.2](https://github.com/ZanzyTHEbar/workspace-indicator/compare/v0.4.1...v0.4.2) (2026-10-20)
+
+
+### Bug Fixes
+
+* **release:** publish Debian packaging updates ([55bad73](https://github.com/ZanzyTHEbar/workspace-indicator/commit/55bad73a4f5d9f2fac79f674a6366fcb52530f83))
+
 ## [0.4.1](https://github.com/ZanzyTHEbar/workspace-indicator/compare/v0.4.0...v0.4.1) (2026-10-20)
 
 

@@ -2,9 +2,13 @@
   "schemaVersion": 1,
   "id": "zanzythebar.workspace-indicator",
   "name": "Workspace Indicator",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "author": "ZanzyTHEbar",
   "description": "A lightweight workspace OSD with theme-aware colors and four-edge placement. Requires the workspace-indicator binary.",
-  "kinds": ["service"],
-  "entryPoints": {"service": "Service.qml"}
+  "kinds": [
+    "service"
+  ],
+  "entryPoints": {
+    "service": "Service.qml"
+  }
 }
