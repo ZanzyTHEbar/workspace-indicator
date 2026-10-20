@@ -21,8 +21,28 @@ pub struct MonitorTarget {
 pub struct WorkspaceState {
     pub active_ws: usize,
     pub occupied: Vec<bool>,
+    pub urgent: Vec<bool>,
     pub occ_max: usize,
     pub target_monitor: Option<MonitorTarget>,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum CompositorBackend {
+    Hyprland,
+    Sway,
+    Niri,
+}
+
+pub fn detect_backend() -> CompositorBackend {
+    if env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_some() {
+        CompositorBackend::Hyprland
+    } else if env::var_os("NIRI_SOCKET").is_some() {
+        CompositorBackend::Niri
+    } else if env::var_os("SWAYSOCK").is_some() {
+        CompositorBackend::Sway
+    } else {
+        CompositorBackend::Hyprland
+    }
 }
 
 /// Locate Hyprland socket (`socket.sock` or `socket2.sock`).
@@ -60,17 +80,206 @@ pub fn hypr_request(cmd: &[u8]) -> Option<String> {
 }
 
 pub fn query_workspace_state(max_ws: usize, per_monitor: bool) -> WorkspaceState {
-    let active_json = hypr_request(b"j/activeworkspace").unwrap_or_default();
-    let workspaces_json = hypr_request(b"j/workspaces").unwrap_or_default();
-    let monitors_json = hypr_request(b"j/monitors").unwrap_or_default();
+    match detect_backend() {
+        CompositorBackend::Hyprland => {
+            let active_json = hypr_request(b"j/activeworkspace").unwrap_or_default();
+            let workspaces_json = hypr_request(b"j/workspaces").unwrap_or_default();
+            let monitors_json = hypr_request(b"j/monitors").unwrap_or_default();
+            parse_workspace_state_filtered(
+                &active_json,
+                &workspaces_json,
+                &monitors_json,
+                max_ws,
+                per_monitor,
+            )
+        }
+        CompositorBackend::Sway => {
+            let ws_json = sway_request(1, b"").unwrap_or_default();
+            parse_sway_workspaces(&ws_json, max_ws, per_monitor)
+        }
+        CompositorBackend::Niri => {
+            let ws_json = niri_request(b"\"Workspaces\"\n").unwrap_or_default();
+            parse_niri_workspaces(&ws_json, max_ws, per_monitor)
+        }
+    }
+}
 
-    parse_workspace_state_filtered(
-        &active_json,
-        &workspaces_json,
-        &monitors_json,
-        max_ws,
-        per_monitor,
-    )
+fn sway_request(msg_type: u32, payload: &[u8]) -> Option<String> {
+    let path = env::var_os("SWAYSOCK")?;
+    let mut stream = UnixStream::connect(path).ok()?;
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(250)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(250)));
+
+    let mut hdr = [0u8; 14];
+    hdr[0..6].copy_from_slice(b"i3-ipc");
+    hdr[6..10].copy_from_slice(&(payload.len() as u32).to_ne_bytes());
+    hdr[10..14].copy_from_slice(&msg_type.to_ne_bytes());
+    stream.write_all(&hdr).ok()?;
+    if !payload.is_empty() {
+        stream.write_all(payload).ok()?;
+    }
+
+    let mut resp_hdr = [0u8; 14];
+    stream.read_exact(&mut resp_hdr).ok()?;
+    let resp_len = u32::from_ne_bytes(resp_hdr[6..10].try_into().ok()?) as usize;
+    let mut buf = vec![0u8; resp_len];
+    stream.read_exact(&mut buf).ok()?;
+    String::from_utf8(buf).ok()
+}
+
+fn niri_request(cmd: &[u8]) -> Option<String> {
+    let path = env::var_os("NIRI_SOCKET")?;
+    let mut stream = UnixStream::connect(path).ok()?;
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(250)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(250)));
+    stream.write_all(cmd).ok()?;
+
+    let mut out = Vec::with_capacity(2048);
+    let mut byte = [0u8; 1];
+    while stream.read(&mut byte).ok()? == 1 {
+        if byte[0] == b'\n' {
+            break;
+        }
+        out.push(byte[0]);
+    }
+    String::from_utf8(out).ok()
+}
+
+pub fn parse_sway_workspaces(js: &str, max_ws: usize, per_monitor: bool) -> WorkspaceState {
+    let objs = split_top_level_objects(js);
+    let mut active_ws = 1usize;
+    let mut focused_output = String::new();
+
+    for &obj in &objs {
+        if json_key_bool(obj, "focused").unwrap_or(false) {
+            if let Some(num) = json_key_int(obj, "num") {
+                if num >= 1 {
+                    active_ws = num as usize;
+                }
+            }
+            focused_output = json_key_string(obj, "output").unwrap_or_default();
+            break;
+        }
+    }
+
+    let mut occupied = vec![false; max_ws + 1];
+    let mut urgent = vec![false; max_ws + 1];
+    let mut occ_max = 0usize;
+
+    for obj in objs {
+        let Some(num) = json_key_int(obj, "num") else {
+            continue;
+        };
+        if num < 1 || (num as usize) > max_ws {
+            continue;
+        };
+        if per_monitor && !focused_output.is_empty() {
+            if let Some(out) = json_key_string(obj, "output") {
+                if out != focused_output {
+                    continue;
+                }
+            }
+        }
+        let idx = num as usize;
+        occupied[idx] = true;
+        if json_key_bool(obj, "urgent").unwrap_or(false) && idx != active_ws {
+            urgent[idx] = true;
+        }
+        if idx > occ_max {
+            occ_max = idx;
+        }
+    }
+
+    WorkspaceState {
+        active_ws,
+        occupied,
+        urgent,
+        occ_max,
+        target_monitor: if focused_output.is_empty() {
+            None
+        } else {
+            Some(MonitorTarget {
+                name: focused_output,
+                focused: true,
+                ..Default::default()
+            })
+        },
+    }
+}
+
+pub fn parse_niri_workspaces(js: &str, max_ws: usize, per_monitor: bool) -> WorkspaceState {
+    // Extract the inner array `[...]` inside `{"Ok":{"Workspaces":[...]}}`
+    let array_slice = js
+        .find('[')
+        .and_then(|s| js.rfind(']').map(|e| &js[s..=e]))
+        .unwrap_or(js);
+    let objs = split_top_level_objects(array_slice);
+
+    let mut active_ws = 1usize;
+    let mut focused_output = String::new();
+
+    for &obj in &objs {
+        if json_key_bool(obj, "is_focused").unwrap_or(false) {
+            if let Some(idx) = json_key_int(obj, "idx") {
+                if idx >= 1 {
+                    active_ws = idx as usize;
+                }
+            }
+            focused_output = json_key_string(obj, "output").unwrap_or_default();
+            break;
+        }
+    }
+
+    let mut occupied = vec![false; max_ws + 1];
+    let mut urgent = vec![false; max_ws + 1];
+    let mut occ_max = 0usize;
+
+    for obj in objs {
+        let Some(idx_i32) = json_key_int(obj, "idx") else {
+            continue;
+        };
+        if idx_i32 < 1 || (idx_i32 as usize) > max_ws {
+            continue;
+        }
+        if per_monitor && !focused_output.is_empty() {
+            if let Some(out) = json_key_string(obj, "output") {
+                if out != focused_output {
+                    continue;
+                }
+            }
+        }
+        let idx = idx_i32 as usize;
+        // Niri workspace is occupied if active_window_id is a number (not null)
+        let has_win = json_key_int(obj, "active_window_id").is_some();
+        if has_win {
+            occupied[idx] = true;
+            if idx > occ_max {
+                occ_max = idx;
+            }
+        }
+        if json_key_bool(obj, "is_urgent").unwrap_or(false) && idx != active_ws {
+            urgent[idx] = true;
+            if idx > occ_max {
+                occ_max = idx;
+            }
+        }
+    }
+
+    WorkspaceState {
+        active_ws,
+        occupied,
+        urgent,
+        occ_max,
+        target_monitor: if focused_output.is_empty() {
+            None
+        } else {
+            Some(MonitorTarget {
+                name: focused_output,
+                focused: true,
+                ..Default::default()
+            })
+        },
+    }
 }
 
 #[cfg(test)]
@@ -147,6 +356,7 @@ pub fn parse_workspace_state_filtered(
     WorkspaceState {
         active_ws,
         occupied,
+        urgent: Vec::new(),
         occ_max,
         target_monitor,
     }
@@ -256,28 +466,63 @@ pub struct Socket2Events {
     pub closed: bool,
 }
 
-/// Non-blocking Hyprland `.socket2.sock` reader for single-threaded `epoll` multiplexing.
+/// Non-blocking compositor event stream reader (Hyprland `.socket2.sock`, Sway `SUBSCRIBE`, Niri `EventStream`).
 pub struct Socket2Stream {
+    backend: CompositorBackend,
     stream: UnixStream,
     buf: Vec<u8>,
 }
 
 impl Socket2Stream {
     pub fn connect_nonblocking() -> Option<Self> {
-        let path = find_hypr_socket(".socket2.sock")?;
-        let stream = UnixStream::connect(path).ok()?;
-        stream.set_nonblocking(true).ok()?;
-        Some(Self {
-            stream,
-            buf: Vec::with_capacity(4096),
-        })
+        let backend = detect_backend();
+        match backend {
+            CompositorBackend::Hyprland => {
+                let path = find_hypr_socket(".socket2.sock")?;
+                let stream = UnixStream::connect(path).ok()?;
+                stream.set_nonblocking(true).ok()?;
+                Some(Self {
+                    backend,
+                    stream,
+                    buf: Vec::with_capacity(4096),
+                })
+            }
+            CompositorBackend::Sway => {
+                let path = env::var_os("SWAYSOCK")?;
+                let mut stream = UnixStream::connect(path).ok()?;
+                let payload = b"[\"workspace\"]";
+                let mut hdr = [0u8; 14];
+                hdr[0..6].copy_from_slice(b"i3-ipc");
+                hdr[6..10].copy_from_slice(&(payload.len() as u32).to_ne_bytes());
+                hdr[10..14].copy_from_slice(&2u32.to_ne_bytes()); // SUBSCRIBE = 2
+                stream.write_all(&hdr).ok()?;
+                stream.write_all(payload).ok()?;
+                stream.set_nonblocking(true).ok()?;
+                Some(Self {
+                    backend,
+                    stream,
+                    buf: Vec::with_capacity(4096),
+                })
+            }
+            CompositorBackend::Niri => {
+                let path = env::var_os("NIRI_SOCKET")?;
+                let mut stream = UnixStream::connect(path).ok()?;
+                stream.write_all(b"\"EventStream\"\n").ok()?;
+                stream.set_nonblocking(true).ok()?;
+                Some(Self {
+                    backend,
+                    stream,
+                    buf: Vec::with_capacity(4096),
+                })
+            }
+        }
     }
 
     pub fn fd(&self) -> RawFd {
         self.stream.as_raw_fd()
     }
 
-    /// Drains available bytes; returns parsed socket2 notification batch.
+    /// Drains available bytes; returns parsed compositor notification batch.
     pub fn drain_events(&mut self) -> Socket2Events {
         let mut events = Socket2Events::default();
         let mut tmp = [0u8; 4096];
@@ -299,17 +544,48 @@ impl Socket2Stream {
             }
         }
 
-        while let Some(pos) = self.buf.iter().position(|&b| b == b'\n') {
-            if let Ok(line) = std::str::from_utf8(&self.buf[..pos]) {
-                let trimmed = line.trim_end();
-                if is_relevant_ipc_event(trimmed) {
-                    events.matched = true;
-                    if let Some(addr) = parse_urgent_address(trimmed) {
-                        events.urgent_addresses.push(addr.to_string());
+        match self.backend {
+            CompositorBackend::Hyprland => {
+                while let Some(pos) = self.buf.iter().position(|&b| b == b'\n') {
+                    if let Ok(line) = std::str::from_utf8(&self.buf[..pos]) {
+                        let trimmed = line.trim_end();
+                        if is_relevant_ipc_event(trimmed) {
+                            events.matched = true;
+                            if let Some(addr) = parse_urgent_address(trimmed) {
+                                events.urgent_addresses.push(addr.to_string());
+                            }
+                        }
                     }
+                    self.buf.drain(..=pos);
                 }
             }
-            self.buf.drain(..=pos);
+            CompositorBackend::Sway => {
+                while self.buf.len() >= 14 {
+                    if &self.buf[0..6] != b"i3-ipc" {
+                        self.buf.clear();
+                        break;
+                    }
+                    let plen = u32::from_ne_bytes(self.buf[6..10].try_into().unwrap()) as usize;
+                    let mtype = u32::from_ne_bytes(self.buf[10..14].try_into().unwrap());
+                    if self.buf.len() < 14 + plen {
+                        break;
+                    }
+                    if (mtype & 0x8000_0000) != 0 {
+                        events.matched = true;
+                    }
+                    self.buf.drain(..14 + plen);
+                }
+            }
+            CompositorBackend::Niri => {
+                while let Some(pos) = self.buf.iter().position(|&b| b == b'\n') {
+                    if let Ok(line) = std::str::from_utf8(&self.buf[..pos]) {
+                        if line.contains("Workspace") {
+                            events.matched = true;
+                        }
+                    }
+                    self.buf.drain(..=pos);
+                }
+            }
         }
 
         if self.buf.len() > 16384 {
@@ -617,5 +893,58 @@ mod tests {
             resolve_urgent_workspace_from_clients(clients, "559c47964e20", 10),
             Some(4)
         );
+    }
+
+    #[test]
+    fn parses_sway_and_niri_workspaces() {
+        let sway_js = r#"[{
+            "num": 1,
+            "name": "1",
+            "focused": false,
+            "urgent": true,
+            "output": "eDP-1"
+        },{
+            "num": 3,
+            "name": "3",
+            "focused": true,
+            "urgent": false,
+            "output": "eDP-1"
+        }]"#;
+        let sw = parse_sway_workspaces(sway_js, 10, true);
+        assert_eq!(sw.active_ws, 3);
+        assert!(sw.occupied[1]);
+        assert!(sw.urgent[1]);
+        assert!(sw.occupied[3]);
+        assert_eq!(sw.target_monitor.unwrap().name, "eDP-1");
+
+        let niri_js = r#"{"Ok":{"Workspaces":[{
+            "id": 10,
+            "idx": 1,
+            "output": "DP-1",
+            "is_urgent": false,
+            "is_focused": false,
+            "active_window_id": 42
+        },{
+            "id": 11,
+            "idx": 2,
+            "output": "DP-1",
+            "is_urgent": false,
+            "is_focused": true,
+            "active_window_id": null
+        },{
+            "id": 12,
+            "idx": 4,
+            "output": "DP-1",
+            "is_urgent": true,
+            "is_focused": false,
+            "active_window_id": 99
+        }]}}"#;
+        let nw = parse_niri_workspaces(niri_js, 10, true);
+        assert_eq!(nw.active_ws, 2);
+        assert!(nw.occupied[1]);
+        assert!(!nw.occupied[2]);
+        assert!(nw.occupied[4]);
+        assert!(nw.urgent[4]);
+        assert_eq!(nw.target_monitor.unwrap().name, "DP-1");
     }
 }

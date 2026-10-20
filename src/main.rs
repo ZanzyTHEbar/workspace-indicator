@@ -306,6 +306,11 @@ impl Daemon {
         if self.urgent.len() <= self.cfg.max_workspaces {
             self.urgent.resize(self.cfg.max_workspaces + 1, false);
         }
+        for (i, &u) in self.ws_state.urgent.iter().enumerate() {
+            if u && i < self.urgent.len() {
+                self.urgent[i] = true;
+            }
+        }
         if self.ws_state.active_ws < self.urgent.len() {
             self.urgent[self.ws_state.active_ws] = false;
         }
