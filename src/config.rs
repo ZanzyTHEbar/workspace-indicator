@@ -485,6 +485,19 @@ impl Config {
         "SUPER + grave".to_string()
     }
 
+    /// Format a `hyprctl keyword bindd` command for live keybind registration over `.socket.sock`.
+    pub fn hyprland_keyword_bindd(&self) -> String {
+        format!(
+            "keyword bindd {}, Show workspace indicator, exec, workspace-indicator --peek",
+            self.hyprland_conf_bind()
+        )
+    }
+
+    /// Format a `hyprctl keyword unbind` command for removing a previous keybind over `.socket.sock`.
+    pub fn hyprland_keyword_unbind(&self) -> String {
+        format!("keyword unbind {}", self.hyprland_conf_bind())
+    }
+
     pub fn render_hyprland_conf(&self) -> String {
         let bind = self.hyprland_conf_bind();
         format!(

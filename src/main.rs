@@ -293,7 +293,7 @@ unsafe extern "C" fn begin_hide_cb(_data: ffi::gpointer) -> ffi::gboolean {
 unsafe fn show_indicator(app: &mut AppState) {
     // Auto-reload config or active Omarchy/Dragonarchy theme if modified on disk (~1us stat check)
     if let Some(new_cfg) = app.loader.reload_if_changed() {
-        app.cfg = new_cfg;
+        apply_reloaded_config(app, new_cfg);
     }
 
     app.ws_state = ipc::query_workspace_state(app.cfg.max_workspaces);
@@ -325,6 +325,15 @@ unsafe fn show_indicator(app: &mut AppState) {
     let display_ms = app.cfg.display_ms;
     start_fade(app, 1.0, fade_in);
     app.tid_hide = ffi::g_timeout_add(display_ms, begin_hide_cb, ptr::null_mut());
+}
+
+fn apply_reloaded_config(app: &mut AppState, new_cfg: Config) {
+    if app.cfg.hyprland_conf_bind() != new_cfg.hyprland_conf_bind() {
+        let _ = ipc::hypr_request(app.cfg.hyprland_keyword_unbind().as_bytes());
+        let _ = ipc::hypr_request(new_cfg.hyprland_keyword_bindd().as_bytes());
+        let _ = sync_hyprland_files(&new_cfg);
+    }
+    app.cfg = new_cfg;
 }
 
 unsafe extern "C" fn do_show_cb(_data: ffi::gpointer) -> ffi::gboolean {
@@ -361,7 +370,8 @@ unsafe extern "C" fn on_sigusr1(_data: ffi::gpointer) -> ffi::gboolean {
 
 unsafe extern "C" fn on_sigusr2(_data: ffi::gpointer) -> ffi::gboolean {
     with_app(|app| {
-        app.cfg = app.loader.load_force();
+        let new_cfg = app.loader.load_force();
+        apply_reloaded_config(app, new_cfg);
         app.layout = compute_pill_layout(
             &app.cfg,
             app.ws_state.active_ws.max(1),
@@ -540,6 +550,12 @@ fn main() {
         eprintln!("workspace-indicator: already running");
         return;
     };
+
+    let _ = sync_hyprland_files(&cfg);
+    if cfg.hyprland_conf_bind() != "$mainMod, grave" {
+        let _ = ipc::hypr_request(b"keyword unbind SUPER, grave");
+        let _ = ipc::hypr_request(cfg.hyprland_keyword_bindd().as_bytes());
+    }
 
     // Install UNIX signal handlers immediately after acquiring flock so early
     // SIGUSR1/SIGUSR2 signals during Wayland/GTK initialization never hit default SIG_DFL terminate.
