@@ -1,6 +1,6 @@
 # Maintainer: ZanzyTHEbar <https://github.com/ZanzyTHEbar>
 pkgname=workspace-indicator-bin
-pkgver=0.4.0
+pkgver=0.4.2
 pkgrel=1
 pkgdesc="Zero-dependency static Wayland workspace OSD for Hyprland, Sway, Niri, and Omarchy"
 arch=('x86_64' 'aarch64')
@@ -10,8 +10,8 @@ provides=('workspace-indicator')
 conflicts=('workspace-indicator')
 source_x86_64=("${pkgname}-${pkgver}-x86_64.tar.gz::${url}/releases/download/v${pkgver}/workspace-indicator-linux-x86_64.tar.gz")
 source_aarch64=("${pkgname}-${pkgver}-aarch64.tar.gz::${url}/releases/download/v${pkgver}/workspace-indicator-linux-aarch64.tar.gz")
-sha256sums_x86_64=('a268c402cb0d3bcbcba6ac4451a95619767dbc69454638436ae29d784c305523')
-sha256sums_aarch64=('a8c2a5555272abd0be6a1969e7207491927908e1e2c20d76778ea9f213ead8fc')
+sha256sums_x86_64=('5466c13ae48bd52128b869865234f04329e9be81d7cacd6de8f9da45ce317183')
+sha256sums_aarch64=('f5a65f6076a792421065319b601252b495dea92eef16225c647ce352153f3029')
 
 package() {
   install -Dm755 "${srcdir}/workspace-indicator" "${pkgdir}/usr/bin/workspace-indicator"
@@ -23,4 +23,5 @@ package() {
   install -Dm644 "${srcdir}/hyprland/workspace-indicator.conf" "${pkgdir}/usr/share/workspace-indicator/hyprland/workspace-indicator.conf"
   install -Dm644 "${srcdir}/hyprland/workspace-indicator.lua" "${pkgdir}/usr/share/workspace-indicator/hyprland/workspace-indicator.lua"
   install -Dm755 "${srcdir}/omarchy/theme-set-hook" "${pkgdir}/usr/share/workspace-indicator/omarchy/theme-set-hook"
+  install -Dm644 "${srcdir}/LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }
