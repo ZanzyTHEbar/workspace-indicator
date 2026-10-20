@@ -57,6 +57,10 @@ systemctl --user import-environment WAYLAND_DISPLAY XDG_RUNTIME_DIR SWAYSOCK NIR
 systemctl --user enable --now workspace-indicator.service
 ```
 
+Prebuilt amd64 and arm64 `.deb` packages are published on GitHub Releases
+starting with [v0.4.2](https://github.com/ZanzyTHEbar/workspace-indicator/releases/tag/v0.4.2).
+Release packaging is automatic on semantic-version releases.
+
 Requires a Wayland session with layer-shell support and a compatible Hyprland,
-Sway, or Niri IPC socket. No X11 support. `.deb` files are prepared for GitHub
+Sway, or Niri IPC socket. No X11 support. `.deb` files are published on GitHub
 Releases; no signed APT repository or official Debian archive listing is provided.
