@@ -16,6 +16,9 @@ Hyper-performant Wayland workspace OSD for **Hyprland** (`0.56+` `.conf` & `.lua
 
 ## Quick Install (Pre-Built Release)
 
+See [distribution packaging](packaging/README.md) for the AUR recipe,
+Omarchy Quattro service plugin, and Debian package builds and validation status.
+
 ```sh
 ws_tmp="$(mktemp -d)"
 curl -fsSL https://github.com/ZanzyTHEbar/workspace-indicator/releases/latest/download/workspace-indicator-linux-x86_64.tar.gz | tar -xz -C "$ws_tmp"

@@ -33,6 +33,7 @@ install: $(TARGET)
 dist: $(TARGET)
 	chmod +x install.sh scripts/workspace-indicator-focusd omarchy/theme-set-hook
 	tar -czf $(ARCHIVE) \
+		LICENSE \
 		$(TARGET) \
 		install.sh \
 		scripts/workspace-indicator-focusd \
