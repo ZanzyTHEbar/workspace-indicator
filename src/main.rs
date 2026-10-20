@@ -221,6 +221,7 @@ struct Daemon {
     loader: ConfigLoader,
     cfg: Config,
     ws_state: WorkspaceState,
+    urgent: Vec<bool>,
     layout: PillLayout,
     prev_ws: usize,
     morph_t: f64,
@@ -241,6 +242,7 @@ impl Daemon {
             self.prev_ws.max(1),
             self.morph_t,
             &self.ws_state.occupied,
+            &self.urgent,
             self.ws_state.occ_max,
         );
     }
@@ -296,6 +298,12 @@ impl Daemon {
         self.ws_state = ipc::query_workspace_state(self.cfg.max_workspaces, self.cfg.per_monitor);
         if self.ws_state.active_ws < 1 {
             return;
+        }
+        if self.urgent.len() <= self.cfg.max_workspaces {
+            self.urgent.resize(self.cfg.max_workspaces + 1, false);
+        }
+        if self.ws_state.active_ws < self.urgent.len() {
+            self.urgent[self.ws_state.active_ws] = false;
         }
 
         if old_active >= 1 && old_active != self.ws_state.active_ws {
@@ -461,12 +469,14 @@ fn main() {
 
     let ws_state = ipc::query_workspace_state(cfg.max_workspaces, cfg.per_monitor);
     let active_ws = ws_state.active_ws.max(1);
+    let urgent = vec![false; cfg.max_workspaces + 1];
     let layout = compute_pill_layout_morphed(
         &cfg,
         active_ws,
         active_ws,
         1.0,
         &ws_state.occupied,
+        &urgent,
         ws_state.occ_max,
     );
 
@@ -499,6 +509,7 @@ fn main() {
         loader,
         cfg,
         ws_state,
+        urgent,
         layout,
         prev_ws: active_ws,
         morph_t: 1.0,
@@ -554,13 +565,25 @@ fn main() {
                 }
                 TAG_SOCKET2 => {
                     if let Some(s2) = &mut sock2 {
-                        let (matched, closed) = s2.drain_events();
-                        if matched {
+                        let batch = s2.drain_events();
+                        for addr in &batch.urgent_addresses {
+                            if let Some(ws) =
+                                ipc::resolve_urgent_workspace(addr, daemon.cfg.max_workspaces)
+                            {
+                                if ws != daemon.ws_state.active_ws {
+                                    if daemon.urgent.len() <= ws {
+                                        daemon.urgent.resize(ws + 1, false);
+                                    }
+                                    daemon.urgent[ws] = true;
+                                }
+                            }
+                        }
+                        if batch.matched {
                             unsafe {
                                 arm_timer_ms(daemon.tfd_debounce, daemon.cfg.debounce_ms.max(1), 0);
                             }
                         }
-                        if closed || (ev.events & (ffi::EPOLLHUP | ffi::EPOLLERR)) != 0 {
+                        if batch.closed || (ev.events & (ffi::EPOLLHUP | ffi::EPOLLERR)) != 0 {
                             unsafe {
                                 epoll_del(epfd, s2.fd());
                             }

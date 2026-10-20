@@ -44,7 +44,7 @@ pub fn compute_pill_layout(
     occupied: &[bool],
     occ_max: usize,
 ) -> PillLayout {
-    compute_pill_layout_morphed(cfg, active_ws, active_ws, 1.0, occupied, occ_max)
+    compute_pill_layout_morphed(cfg, active_ws, active_ws, 1.0, occupied, &[], occ_max)
 }
 
 pub fn compute_pill_layout_morphed(
@@ -53,9 +53,16 @@ pub fn compute_pill_layout_morphed(
     prev_ws: usize,
     morph_t: f64,
     occupied: &[bool],
+    urgent: &[bool],
     occ_max: usize,
 ) -> PillLayout {
-    let n = dot_count(cfg, active_ws, occ_max);
+    let urgent_max = urgent
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(i, &u)| if u { Some(i) } else { None })
+        .unwrap_or(0);
+    let n = dot_count(cfg, active_ws, occ_max.max(urgent_max));
     let long_axis = cfg.pad_h * 2
         + (n.saturating_sub(1) as i32) * cfg.dot_spacing
         + (cfg.active_radius * 2.0) as i32;
@@ -98,6 +105,8 @@ pub fn compute_pill_layout_morphed(
 
         let (color, radius) = if ws == active_ws {
             (cfg.palette.active, cfg.active_radius)
+        } else if urgent.get(ws).copied().unwrap_or(false) {
+            (cfg.palette.urgent, cfg.dot_radius + 0.75)
         } else if occupied.get(ws).copied().unwrap_or(false) {
             (cfg.palette.occupied, cfg.dot_radius)
         } else {
@@ -306,11 +315,11 @@ mod tests {
         let cfg = Config::default();
         let occ = vec![false, true, false, true, false, false];
 
-        let mid = compute_pill_layout_morphed(&cfg, 4, 1, 0.5, &occ, 4);
+        let mid = compute_pill_layout_morphed(&cfg, 4, 1, 0.5, &occ, &[], 4);
         let cap_mid = mid.active_capsule.unwrap();
         assert!(cap_mid.bx > cap_mid.ax + 10.0); // stretched capsule between dot 1 and dot 4
 
-        let done = compute_pill_layout_morphed(&cfg, 4, 1, 1.0, &occ, 4);
+        let done = compute_pill_layout_morphed(&cfg, 4, 1, 1.0, &occ, &[], 4);
         let cap_done = done.active_capsule.unwrap();
         assert!((cap_done.bx - cap_done.ax).abs() < 1e-6);
         assert!((cap_done.bx - done.dots[3].cx).abs() < 1e-6);

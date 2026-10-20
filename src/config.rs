@@ -138,6 +138,7 @@ pub struct Palette {
     pub active: Rgba,
     pub occupied: Rgba,
     pub empty: Rgba,
+    pub urgent: Rgba,
 }
 
 impl Default for Palette {
@@ -149,36 +150,36 @@ impl Default for Palette {
 impl Palette {
     pub fn preset(name: &str) -> Option<Self> {
         let slug = name.trim().to_ascii_lowercase();
-        let (bg, active, fg, dim) = match slug.as_str() {
+        let (bg, active, fg, dim, red) = match slug.as_str() {
             "catppuccin" | "catppuccin-mocha" | "mocha" => (
-                "#1e1e2e", "#89b4fa", "#cdd6f4", "#9399b2",
+                "#1e1e2e", "#89b4fa", "#cdd6f4", "#9399b2", "#f38ba8",
             ),
             "catppuccin-latte" | "latte" => (
-                "#eff1f5", "#1e66f5", "#4c4f69", "#8c8fa1",
+                "#eff1f5", "#1e66f5", "#4c4f69", "#8c8fa1", "#d20f39",
             ),
             "tokyo-night" | "tokyonight" => (
-                "#1a1b26", "#7aa2f7", "#a9b1d6", "#565f89",
+                "#1a1b26", "#7aa2f7", "#a9b1d6", "#565f89", "#f7768e",
             ),
             "gruvbox" | "gruvbox-dark" => (
-                "#282828", "#d79921", "#ebdbb2", "#928374",
+                "#282828", "#d79921", "#ebdbb2", "#928374", "#fb4934",
             ),
             "nord" => (
-                "#2e3440", "#88c0d0", "#eceff4", "#4c566a",
+                "#2e3440", "#88c0d0", "#eceff4", "#4c566a", "#bf616a",
             ),
             "rose-pine" | "rosepine" => (
-                "#191724", "#c4a7e7", "#e0def4", "#6e6a86",
+                "#191724", "#c4a7e7", "#e0def4", "#6e6a86", "#eb6f92",
             ),
             "kanagawa" => (
-                "#1f1f28", "#7e9cd8", "#dcd7ba", "#727169",
+                "#1f1f28", "#7e9cd8", "#dcd7ba", "#727169", "#c34043",
             ),
             "everforest" => (
-                "#2d353b", "#a7c080", "#d3c6aa", "#859289",
+                "#2d353b", "#a7c080", "#d3c6aa", "#859289", "#e67e80",
             ),
             "matte-black" | "matteblack" => (
-                "#121212", "#e68e0d", "#bebebe", "#666666",
+                "#121212", "#e68e0d", "#bebebe", "#666666", "#d35f5f",
             ),
             "ristretto" => (
-                "#2c2525", "#f38d70", "#e6d9db", "#72696a",
+                "#2c2525", "#f38d70", "#e6d9db", "#72696a", "#fd6883",
             ),
             _ => return None,
         };
@@ -188,6 +189,7 @@ impl Palette {
             active: Rgba::parse(active)?.with_alpha(1.0),
             occupied: Rgba::parse(fg)?.with_alpha(0.55),
             empty: Rgba::parse(dim)?.with_alpha(0.25),
+            urgent: Rgba::parse(red)?.with_alpha(1.0),
         })
     }
 
@@ -222,6 +224,9 @@ impl Palette {
                 }
                 "comment" | "muted" | "dim" | "empty" | "color8" | "dark_foreground" => {
                     self.empty = color.with_alpha(emp_alpha);
+                }
+                "red" | "color1" | "urgent" => {
+                    self.urgent = color.with_alpha(1.0);
                 }
                 _ => {}
             }
@@ -260,6 +265,7 @@ pub struct Config {
     pub custom_active: Option<Rgba>,
     pub custom_occupied: Option<Rgba>,
     pub custom_empty: Option<Rgba>,
+    pub custom_urgent: Option<Rgba>,
     pub palette: Palette,
 }
 
@@ -289,6 +295,7 @@ impl Default for Config {
             custom_active: None,
             custom_occupied: None,
             custom_empty: None,
+            custom_urgent: None,
             palette: Palette::default(),
         }
     }
@@ -412,6 +419,9 @@ impl Config {
                 "empty" | "dim" | "muted" | "comment" | "colors_empty" | "colors_dim" => {
                     self.custom_empty = Rgba::parse(val);
                 }
+                "urgent" | "red" | "colors_urgent" | "colors_red" => {
+                    self.custom_urgent = Rgba::parse(val);
+                }
                 _ => {}
             }
         }
@@ -455,6 +465,9 @@ impl Config {
         if let Some(c) = self.custom_empty {
             let a = if c.a < 0.999 { c.a } else { self.empty_alpha };
             pal.empty = c.with_alpha(a);
+        }
+        if let Some(c) = self.custom_urgent {
+            pal.urgent = c;
         }
 
         self.palette = pal;

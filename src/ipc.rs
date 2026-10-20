@@ -202,7 +202,58 @@ pub fn is_relevant_ipc_event(line: &str) -> bool {
             | "destroyworkspacev2"
             | "moveworkspace"
             | "moveworkspacev2"
+            | "urgent"
     )
+}
+
+pub fn parse_urgent_address(line: &str) -> Option<&str> {
+    let addr = line.strip_prefix("urgent>>")?.trim();
+    if addr.is_empty() {
+        None
+    } else {
+        Some(addr.trim_start_matches("0x"))
+    }
+}
+
+/// Resolve the workspace ID (1..=max_ws) that owns the window with hex address `raw_addr`.
+pub fn resolve_urgent_workspace(raw_addr: &str, max_ws: usize) -> Option<usize> {
+    let clients_json = hypr_request(b"j/clients")?;
+    resolve_urgent_workspace_from_clients(&clients_json, raw_addr, max_ws)
+}
+
+pub fn resolve_urgent_workspace_from_clients(
+    clients_json: &str,
+    raw_addr: &str,
+    max_ws: usize,
+) -> Option<usize> {
+    let needle = raw_addr.trim().trim_start_matches("0x");
+    if needle.is_empty() {
+        return None;
+    }
+
+    for obj in split_top_level_objects(clients_json) {
+        let Some(addr) = json_key_string(obj, "address") else {
+            continue;
+        };
+        if addr.trim_start_matches("0x").eq_ignore_ascii_case(needle) {
+            // Find nested `"workspace": { "id": N }`
+            if let Some(ws_pos) = obj.find("\"workspace\"") {
+                if let Some(id) = json_key_int(&obj[ws_pos..], "id") {
+                    if id >= 1 && (id as usize) <= max_ws {
+                        return Some(id as usize);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+#[derive(Default, Debug)]
+pub struct Socket2Events {
+    pub matched: bool,
+    pub urgent_addresses: Vec<String>,
+    pub closed: bool,
 }
 
 /// Non-blocking Hyprland `.socket2.sock` reader for single-threaded `epoll` multiplexing.
@@ -226,16 +277,15 @@ impl Socket2Stream {
         self.stream.as_raw_fd()
     }
 
-    /// Drains available bytes; returns `(matched_relevant_event, socket_closed)`.
-    pub fn drain_events(&mut self) -> (bool, bool) {
-        let mut matched = false;
-        let mut closed = false;
+    /// Drains available bytes; returns parsed socket2 notification batch.
+    pub fn drain_events(&mut self) -> Socket2Events {
+        let mut events = Socket2Events::default();
         let mut tmp = [0u8; 4096];
 
         loop {
             match self.stream.read(&mut tmp) {
                 Ok(0) => {
-                    closed = true;
+                    events.closed = true;
                     break;
                 }
                 Ok(n) => {
@@ -243,7 +293,7 @@ impl Socket2Stream {
                 }
                 Err(e) if e.kind() == ErrorKind::WouldBlock => break,
                 Err(_) => {
-                    closed = true;
+                    events.closed = true;
                     break;
                 }
             }
@@ -251,8 +301,12 @@ impl Socket2Stream {
 
         while let Some(pos) = self.buf.iter().position(|&b| b == b'\n') {
             if let Ok(line) = std::str::from_utf8(&self.buf[..pos]) {
-                if is_relevant_ipc_event(line.trim_end()) {
-                    matched = true;
+                let trimmed = line.trim_end();
+                if is_relevant_ipc_event(trimmed) {
+                    events.matched = true;
+                    if let Some(addr) = parse_urgent_address(trimmed) {
+                        events.urgent_addresses.push(addr.to_string());
+                    }
                 }
             }
             self.buf.drain(..=pos);
@@ -262,7 +316,7 @@ impl Socket2Stream {
             self.buf.clear();
         }
 
-        (matched, closed)
+        events
     }
 }
 
@@ -551,6 +605,17 @@ mod tests {
         assert!(is_relevant_ipc_event("focusedmon>>DP-1,2"));
         assert!(is_relevant_ipc_event("focusedmonv2>>DP-1,2"));
         assert!(is_relevant_ipc_event("destroyworkspacev2>>8,8"));
+        assert!(is_relevant_ipc_event("urgent>>559c47964e20"));
         assert!(!is_relevant_ipc_event("activewindow>>kitty,zsh"));
+
+        let clients = r#"[{
+            "address": "0x559c47964e20",
+            "workspace": { "id": 4, "name": "4" },
+            "title": "Alert"
+        }]"#;
+        assert_eq!(
+            resolve_urgent_workspace_from_clients(clients, "559c47964e20", 10),
+            Some(4)
+        );
     }
 }
