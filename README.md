@@ -14,148 +14,96 @@ Hyper-performant Wayland workspace OSD for **Hyprland** (`0.56+` `.conf` & `.lua
 - **Omarchy Quattro & Dragonarchy Auto-Theming:** Watches `~/.local/state/omarchy/current/theme/colors.toml` (Omarchy 4), `~/.config/omarchy/current/theme/colors.toml` (Omarchy 3), and `~/.config/current/theme/hyprland-palette.conf` (Dragonarchy) via `inotify`, plus 10 built-in presets (`catppuccin-mocha`, `catppuccin-latte`, `tokyo-night`, `gruvbox`, `nord`, `rose-pine`, `kanagawa`, `everforest`, `matte-black`, `ristretto`).
 - **Dual Hyprland Integration (`.conf` + `.lua`) & Live Keybind Sync:** Emits both `workspace-indicator.local.conf` and `workspace-indicator.lua` (`hl.layer_rule` + `o.bind`/`hl.bind`), and dynamically applies custom keybinds over `.socket.sock`.
 
-## Installation
+## Build, inspect, install, uninstall
 
-Requires Linux, a Wayland compositor supporting layer-shell, and a running
-Hyprland, Sway, or Niri session. Choose **one** binary installation method.
-Use either the Omarchy plugin or systemd to own the daemon—not both.
-
-| Method | Status |
-| --- | --- |
-| [AUR recipe](#1-arch-linux--aur) | Local build available; not yet published to AUR |
-| [Debian package](#2-debian--ubuntu-deb) | Published amd64 and arm64 `.deb` assets since v0.4.2 |
-| [Omarchy plugin](#3-omarchy-quattro-plugin) | Manual installation; marketplace submission and runtime validation pending |
-| [Release `install.sh`](#4-prebuilt-release-installsh) | Published x86_64 and aarch64 tarballs |
-| [Source `make`](#5-build-from-source-make) | Builds and installs locally |
-
-### 1. Arch Linux / AUR
-
-Until `workspace-indicator-bin` is published to AUR, build the supplied recipe
-using Arch's `base-devel` tools (run `makepkg` as your normal user):
-
-```sh
-git clone https://github.com/ZanzyTHEbar/workspace-indicator.git
-cd workspace-indicator/packaging/aur
-makepkg -si
-```
-
-The recipe downloads checksum-verified **v0.4.0** prebuilt binaries for
-`x86_64` or `aarch64`; it does not compile Rust. Once published, the intended
-AUR-helper command is `paru -S workspace-indicator-bin`.
-
-### 2. Debian / Ubuntu (`.deb`)
-
-Download a matching `.deb` from [Releases](https://github.com/ZanzyTHEbar/workspace-indicator/releases),
-then install with APT. Direct downloads for v0.4.2:
-
-- [amd64 (x86_64)](https://github.com/ZanzyTHEbar/workspace-indicator/releases/download/v0.4.2/workspace-indicator_0.4.2-1_amd64.deb)
-- [arm64 (aarch64)](https://github.com/ZanzyTHEbar/workspace-indicator/releases/download/v0.4.2/workspace-indicator_0.4.2-1_arm64.deb)
-
-```sh
-sudo apt install ./workspace-indicator_*_amd64.deb
-# Use the arm64 package on ARM64 systems.
-```
-
-To build a package locally instead, install Rust via rustup,
-Python 3.11+, GNU Make, and binutils (`ar`), then on x86_64:
+GNU Make is the public interface for every distribution format. Run commands
+from the repository root as your normal user; package targets request `sudo`
+only for APT/pacman operations. Choose one binary installation method.
 
 ```sh
 git clone https://github.com/ZanzyTHEbar/workspace-indicator.git
 cd workspace-indicator
-rustup target add x86_64-unknown-linux-musl
-make
-python3 scripts/build-deb.py target/x86_64-unknown-linux-musl/release/workspace-indicator amd64
-sudo apt install ./dist/workspace-indicator_*_amd64.deb
+make help
 ```
 
-ARM64 builds require the `aarch64-unknown-linux-musl` target and a suitable
-linker; pass that target to `make` and `arm64` to the package builder.
-There is no APT repository or official Debian archive listing. Debian installation
-testing remains pending. Package installation does not start a user service as root.
+| Format | Build | Inspect | Install | Uninstall |
+| --- | --- | --- | --- | --- |
+| Local source | `make build` | `make inspect` | `make install` | `make uninstall` |
+| Release tarball | `make build-tar` | `make inspect-tar` | `make install-tar` | `make uninstall-tar` |
+| Debian / Ubuntu | `make build-deb` | `make inspect-deb` | `make install-deb` | `make uninstall-deb` |
+| Arch / AUR recipe | `make build-aur` | `make inspect-aur` | `make install-aur` | `make uninstall-aur` |
+| Omarchy plugin | `make build-omarchy` | `make inspect-omarchy` | `make install-omarchy` | `make uninstall-omarchy` |
 
-### 3. Omarchy Quattro plugin
+Local and Debian installs build automatically. Build a tarball before installing
+it, or pass a downloaded archive. AUR installs build the pinned binary package
+through `makepkg`. Omarchy installs validate, stop the competing user service,
+copy the plugin, rescan the shell, and enable it; removing uses Omarchy's own
+removal command. Existing plugin directories are never overwritten.
 
-Install the binary first using one of the other methods, and ensure
-`workspace-indicator` is on the Omarchy shell's `PATH`. Then install the plugin
-manually (not yet listed in the marketplace):
+### Prerequisites and architectures
+
+- **Source/tarball builds:** Rust/Cargo via rustup, GNU Make, Bash, and GNU tar.
+  `make toolchain` installs the selected musl target. No GTK/Cairo headers required.
+- **Debian builds:** also Node.js, xz, and binutils (`ar`). Debian inspection
+  requires only `ar` and tar.
+- **AUR builds:** Arch `base-devel`/`makepkg`. No Rust compiler needed: the recipe
+  downloads checksum-verified release binaries.
+- **Omarchy:** Quattro's `omarchy` and `omarchy-shell` commands, plus a separately
+  installed `workspace-indicator` binary on the shell's `PATH`.
+
+The host architecture is selected automatically (`x86_64` or `aarch64`). To cross-build:
 
 ```sh
-systemctl --user disable --now workspace-indicator.service
-git clone https://github.com/ZanzyTHEbar/workspace-indicator.git \
-  "$HOME/.config/omarchy/plugins/zanzythebar.workspace-indicator"
-omarchy plugin validate "$HOME/.config/omarchy/plugins/zanzythebar.workspace-indicator"
-omarchy-shell shell rescanPlugins
+make toolchain ARCH=aarch64
+make build-tar build-deb ARCH=aarch64
 ```
 
-Enable `zanzythebar.workspace-indicator` in Omarchy's plugin manager. The service
-plugin runs the existing binary; it does not install or download it. Disable any
-Hyprland `exec-once` snippet that starts `workspace-indicator.service`, otherwise
-it will compete with the plugin at the next login. Keep blur rules and keybinds.
+Cross-compilation also requires a suitable linker configured through Cargo, e.g.
+`CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER`. Never cross-install onto a
+different host architecture. `RUST_TARGET` remains available for custom toolchains.
 
-Disable the plugin before removing its directory. The separately installed
-binary and your configuration remain intact. This wrapper needs runtime testing
-on Quattro before marketplace submission; Omarchy 3 users should use systemd instead.
+### Use downloaded packages without compiling
 
-### 4. Prebuilt release (`install.sh`)
-
-No Rust compiler required. Choose `x86_64` or `aarch64` to match your machine.
-Download before extracting so a failed download cannot run a partial installer:
-
-```bash
-(
-  set -eu
-  arch="$(uname -m)"
-  case "$arch" in x86_64|aarch64) ;; *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; esac
-  ws_tmp="$(mktemp -d)"
-  trap 'rm -rf "$ws_tmp"' EXIT
-  curl -fL "https://github.com/ZanzyTHEbar/workspace-indicator/releases/latest/download/workspace-indicator-linux-${arch}.tar.gz" \
-    -o "$ws_tmp/release.tar.gz"
-  tar -xzf "$ws_tmp/release.tar.gz" -C "$ws_tmp"
-  "$ws_tmp/install.sh"
-)
-```
-
-Run as your normal user, without `sudo`. The installer places the binary in
-`~/.local/bin`, the user unit in `~/.config/systemd/user`, and integration files
-in existing Hyprland/Omarchy config directories. It may append an optional Lua
-include to `hyprland.lua`; review/back up existing configuration before installing.
-Ensure `~/.local/bin` is on your session's `PATH`.
-
-### 5. Build from source (`make`)
-
-Requires Rust/Cargo via rustup, GNU Make, and the matching musl target; no GTK
-or Cairo development headers are needed. On x86_64:
+Download your matching artifact from [Releases](https://github.com/ZanzyTHEbar/workspace-indicator/releases).
+amd64 and arm64 `.deb` packages are available since v0.4.2. Then, from this checkout:
 
 ```sh
-git clone https://github.com/ZanzyTHEbar/workspace-indicator.git
-cd workspace-indicator
-rustup target add x86_64-unknown-linux-musl
-make test
-make install
+make inspect-deb install-deb PACKAGE="$HOME/Downloads/workspace-indicator_0.4.2-1_amd64.deb"
+# Or a downloaded x86_64 / aarch64 release tarball:
+make inspect-tar install-tar ARCHIVE="$HOME/Downloads/workspace-indicator-linux-x86_64.tar.gz"
 ```
 
-`make install` builds the binary and invokes `install.sh` as your user. For ARM64,
-use `make install RUST_TARGET=aarch64-unknown-linux-musl` with a suitable linker.
+No Rust or Node is required to install downloaded artifacts. Newly built tarballs
+also include a Makefile: after extraction, `make install` uses the bundled binary
+without compiling, and `make uninstall` removes the user install. Older release
+archives can be installed through this checkout's `make install-tar`.
 
-### Start and integrate
+Local/tarball installation uses `~/.local/bin` and `~/.config`, including the user
+unit, Hyprland snippets, and Omarchy theme hooks. It may append an optional Lua
+include; back up existing config before installation. Uninstall preserves your
+main Hyprland config (including the harmless optional include) and personal settings.
+APT/pacman installations use `/usr/bin` and the distribution's user-unit directory.
+There is no APT repository or official Debian archive listing.
 
-Skip systemd activation when using the Omarchy plugin. Otherwise, from a terminal
-inside your Wayland session:
+### Session management
+
+Install targets enable/start the user service when run inside a Wayland session.
+Headless installation stages files only; run `make start` after logging in.
+`make stop` disables/stops the user service. To stage without changing session state:
 
 ```sh
-systemctl --user daemon-reload
-systemctl --user import-environment WAYLAND_DISPLAY XDG_RUNTIME_DIR HYPRLAND_INSTANCE_SIGNATURE SWAYSOCK NIRI_SOCKET
-systemctl --user enable --now workspace-indicator.service
-workspace-indicator --peek
+make install MANAGE_SERVICE=0
 ```
 
-For Hyprland, generate the snippets with `workspace-indicator --sync-hyprland`.
-Source `~/.config/hypr/config/workspace-indicator.local.conf` from `hyprland.conf`,
-or load `~/.config/hypr/workspace-indicator.lua` from your Lua config—**not both**.
-For Sway/Niri, configure a compositor keybinding to run `workspace-indicator --peek`;
-the generated Hyprland snippets do not apply to those compositors.
+Use either systemd or the Omarchy plugin to own the daemon—not both. Before using
+`make install-omarchy`, install the binary through one of the other Make targets
+and disable any Hyprland `exec-once` snippet that starts the service. The plugin
+does not own the separate binary, so `make uninstall-omarchy` leaves it installed.
 
-See [distribution packaging](packaging/README.md) for packaging and publication details.
+For Hyprland, source the generated `.conf` snippet or load the Lua snippet—not both.
+For Sway/Niri, bind `workspace-indicator --peek` in the compositor's configuration.
+
+See [distribution packaging](packaging/README.md) for release and publication details.
 
 ## Configuration (`~/.config/workspace-indicator/config.lua` or `config.toml`)
 
