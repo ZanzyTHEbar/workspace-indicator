@@ -68,7 +68,7 @@ Download your matching artifact from [Releases](https://github.com/ZanzyTHEbar/w
 amd64 and arm64 `.deb` packages are available since v0.4.2. Then, from this checkout:
 
 ```sh
-make inspect-deb install-deb PACKAGE="$HOME/Downloads/workspace-indicator_0.4.2-1_amd64.deb"
+make inspect-deb install-deb PACKAGE="$HOME/Downloads/workspace-indicator_0.5.0-1_amd64.deb"
 # Or a downloaded x86_64 / aarch64 release tarball:
 make inspect-tar install-tar ARCHIVE="$HOME/Downloads/workspace-indicator-linux-x86_64.tar.gz"
 ```
@@ -87,9 +87,18 @@ There is no APT repository or official Debian archive listing.
 
 ### Session management
 
-Install targets enable/start the user service when run inside a Wayland session.
-Headless installation stages files only; run `make start` after logging in.
-`make stop` disables/stops the user service. To stage without changing session state:
+Install targets enable/start a **systemd user service** when run from a terminal
+inside your Wayland session. If you installed from a Linux console or over SSH,
+open a terminal inside Sway, Hyprland, or Niri and run these commands from the checkout:
+
+```sh
+make start
+systemctl --user status workspace-indicator.service
+```
+
+`make start` reloads user units and imports the compositor environment before
+starting the service; no `sudo` is needed. `make stop` disables/stops it.
+To stage without changing session state:
 
 ```sh
 make install MANAGE_SERVICE=0
@@ -101,7 +110,14 @@ and disable any Hyprland `exec-once` snippet that starts the service. The plugin
 does not own the separate binary, so `make uninstall-omarchy` leaves it installed.
 
 For Hyprland, source the generated `.conf` snippet or load the Lua snippet—not both.
-For Sway/Niri, bind `workspace-indicator --peek` in the compositor's configuration.
+For Sway, add an optional shortcut to `~/.config/sway/config` and reload the config:
+
+```sway
+bindsym $mod+grave exec workspace-indicator --peek
+```
+
+For Niri, bind the same `workspace-indicator --peek` command in its configuration.
+The shortcut reveals the OSD; the service must already be running.
 
 See [distribution packaging](packaging/README.md) for release and publication details.
 
