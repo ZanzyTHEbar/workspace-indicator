@@ -1,6 +1,6 @@
 [package]
 name = "workspace-indicator"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 description = "Hyper-performant Wayland workspace OSD for Hyprland & Omarchy"
 license = "MIT"

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "zanzythebar.workspace-indicator",
   "name": "Workspace Indicator",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "author": "ZanzyTHEbar",
   "description": "A lightweight workspace OSD with theme-aware colors and four-edge placement. Requires the workspace-indicator binary.",
   "kinds": [

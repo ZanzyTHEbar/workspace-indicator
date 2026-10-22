@@ -1,3 +1,10 @@
+## [0.5.1](https://github.com/ZanzyTHEbar/workspace-indicator/compare/v0.5.0...v0.5.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **wayland:** honor layer configure handshake ([81cb368](https://github.com/ZanzyTHEbar/workspace-indicator/commit/81cb3688218b8f95cd99ac6fa37ed6d7034e08f5))
+
 # [0.5.0](https://github.com/ZanzyTHEbar/workspace-indicator/compare/v0.4.2...v0.5.0) (2026-10-20)
 
 
