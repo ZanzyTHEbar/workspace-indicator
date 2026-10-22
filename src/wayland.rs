@@ -141,7 +141,7 @@ pub struct WaylandClient {
     fractional_scale_id: u32,
     preferred_scale_120: u32,
     bound_output_id: u32,
-    pub mapped: bool,
+    mapped: bool,
     applied_position: Option<Position>,
     applied_margin: i32,
     applied_size: (u32, u32),
@@ -704,23 +704,13 @@ impl WaylandClient {
             return Ok(());
         }
 
-        // Unmap the surface when fully transparent to remove it from compositor's render tree
+        // Destroy the hidden layer so the next show starts a fresh configure handshake.
+        // A null-buffer unmap resets layer-shell state, so it cannot be remapped
+        // by attaching a buffer using the previous configure acknowledgement.
         if opacity <= 0.001 {
             if self.mapped {
-                // Attach null buffer to unmap (wl_surface.attach(NULL, 0, 0))
-                // This removes the layer from hyprctl layers entirely
-                self.send_msg(self.surface_id, WL_SURFACE_ATTACH, &[0, 0, 0])?;
-                self.send_msg(self.surface_id, WL_SURFACE_COMMIT, &[])?;
-                self.mapped = false;
+                self.destroy_surface()?;
             }
-            return Ok(());
-        }
-
-        if !self.mapped {
-            // Remap: commit without buffer to trigger configure event
-            self.mapped = true;
-            self.configured = false;
-            self.send_msg(self.surface_id, WL_SURFACE_COMMIT, &[])?;
             return Ok(());
         }
 
@@ -783,6 +773,7 @@ impl WaylandClient {
             self.send_msg(self.surface_id, WL_SURFACE_DAMAGE, &[0, 0, width, height])?;
         }
         self.send_msg(self.surface_id, WL_SURFACE_COMMIT, &[])?;
+        self.mapped = true;
         Ok(())
     }
 

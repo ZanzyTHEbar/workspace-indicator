@@ -258,8 +258,6 @@ impl Daemon {
             self.layout.width as u32,
             self.layout.height as u32,
         );
-        self.wl.mapped = true;
-        self.wl.configured = true;
     }
 
     fn render_and_present(&mut self) {
