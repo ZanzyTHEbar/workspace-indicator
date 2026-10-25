@@ -135,7 +135,7 @@ return {
   fade_out_ms = 300,
   debounce_ms = 80,
   persistent_workspaces = 5,
-  max_workspaces = 10,
+  max_workspaces = 32,       -- supported numeric workspace range: 1–32
   colors = {
     -- Optional explicit overrides (#RRGGBB, #RRGGBBAA, or rgba(RRGGBBAA))
     -- background = "#1a1b26",
@@ -146,6 +146,11 @@ return {
   },
 }
 ```
+
+Numeric workspaces 1–32 are supported; `max_workspaces` defaults to 32 and can
+be lowered. Five slots remain visible by default (`persistent_workspaces = 5`);
+additional slots appear as needed. Sway workspaces without a positive numeric
+`num` are not mapped to indicator slots.
 
 ## CLI
 

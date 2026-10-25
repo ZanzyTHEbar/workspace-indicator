@@ -292,7 +292,7 @@ impl Default for Config {
             dot_radius: 4.0,
             active_radius: 5.5,
             persistent_workspaces: 5,
-            max_workspaces: 10,
+            max_workspaces: 32,
             per_monitor: false,
             theme: "auto".to_string(),
             keybind: "$mainMod, grave".to_string(),
