@@ -1,3 +1,10 @@
+# [0.6.0](https://github.com/ZanzyTHEbar/workspace-indicator/compare/v0.5.2...v0.6.0) (2026-10-25)
+
+
+### Features
+
+* **omarchy:** simplify manual plugin setup ([900a7d8](https://github.com/ZanzyTHEbar/workspace-indicator/commit/900a7d8781f510b47d911f5e09607651b419676b))
+
 ## [0.5.2](https://github.com/ZanzyTHEbar/workspace-indicator/compare/v0.5.1...v0.5.2) (2026-10-25)
 
 
