@@ -1,6 +1,6 @@
 pkgbase = workspace-indicator-bin
 	pkgdesc = Zero-dependency static Wayland workspace OSD for Hyprland, Sway, Niri, and Omarchy
-	pkgver = 0.5.1
+	pkgver = 0.5.2
 	pkgrel = 1
 	url = https://github.com/ZanzyTHEbar/workspace-indicator
 	arch = x86_64
@@ -8,9 +8,9 @@ pkgbase = workspace-indicator-bin
 	license = MIT
 	provides = workspace-indicator
 	conflicts = workspace-indicator
-	source_x86_64 = workspace-indicator-bin-0.5.1-x86_64.tar.gz::https://github.com/ZanzyTHEbar/workspace-indicator/releases/download/v0.5.1/workspace-indicator-linux-x86_64.tar.gz
-	sha256sums_x86_64 = a1a0abd928532bc3561e34322a93c5484955a88a066d5939aaa302ad8a4f1724
-	source_aarch64 = workspace-indicator-bin-0.5.1-aarch64.tar.gz::https://github.com/ZanzyTHEbar/workspace-indicator/releases/download/v0.5.1/workspace-indicator-linux-aarch64.tar.gz
-	sha256sums_aarch64 = c9fea7a87838219eb5b5aa8f8cc1dd827e4c764ca79d8fc751bda11dd81ffb05
+	source_x86_64 = workspace-indicator-bin-0.5.2-x86_64.tar.gz::https://github.com/ZanzyTHEbar/workspace-indicator/releases/download/v0.5.2/workspace-indicator-linux-x86_64.tar.gz
+	sha256sums_x86_64 = a8c45709459f8560d3e7ffbcf61651fbbf3e2c04b5882337c7df24547085efaf
+	source_aarch64 = workspace-indicator-bin-0.5.2-aarch64.tar.gz::https://github.com/ZanzyTHEbar/workspace-indicator/releases/download/v0.5.2/workspace-indicator-linux-aarch64.tar.gz
+	sha256sums_aarch64 = 00d510fcf4cbf522833af02c2b518109acb17b833aab9cd782cfa0bdb30b44b2
 
 pkgname = workspace-indicator-bin

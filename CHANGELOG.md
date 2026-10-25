@@ -1,3 +1,12 @@
+## [0.5.2](https://github.com/ZanzyTHEbar/workspace-indicator/compare/v0.5.1...v0.5.2) (2026-10-25)
+
+
+### Bug Fixes
+
+* **config:** raise default workspace limit ([a2feb0e](https://github.com/ZanzyTHEbar/workspace-indicator/commit/a2feb0e23a24ff29cc0c5623a3330a3d399405b6))
+* **packaging:** use source commit timestamps ([e6b9592](https://github.com/ZanzyTHEbar/workspace-indicator/commit/e6b9592f0a208481c03bf39964952e17b42c8ec5))
+* **sway:** avoid false workspace-one selection ([e5a743f](https://github.com/ZanzyTHEbar/workspace-indicator/commit/e5a743f016b12da89c59285bced17afb8f40af50))
+
 ## [0.5.1](https://github.com/ZanzyTHEbar/workspace-indicator/compare/v0.5.0...v0.5.1) (2026-10-22)
 
 
