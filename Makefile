@@ -24,10 +24,17 @@ HYPR_DIR ?= $(XDG_CONFIG)/hypr
 HYPR_CONF_DIR ?= $(HYPR_DIR)/config
 OMARCHY_HOOKS_ROOT ?= $(XDG_CONFIG)/omarchy/hooks
 PLUGIN_DIR := $(XDG_CONFIG)/omarchy/plugins/zanzythebar.workspace-indicator
-# Set to 0 when staging files without touching the current graphical session.
+# Plugin mode installs the dependency without standalone integration or service activation.
+INSTALL_MODE ?= standalone
+ifneq ($(INSTALL_MODE),standalone)
+ifneq ($(INSTALL_MODE),plugin)
+$(error INSTALL_MODE must be standalone or plugin)
+endif
+endif
+# This suppresses service actions only, not standalone config writes.
 MANAGE_SERVICE ?= 1
 SUDO ?= sudo
-export PREFIX BINDIR SYSTEMD_USER_DIR HYPR_DIR HYPR_CONF_DIR OMARCHY_HOOKS_ROOT MANAGE_SERVICE
+export PREFIX BINDIR SYSTEMD_USER_DIR HYPR_DIR HYPR_CONF_DIR OMARCHY_HOOKS_ROOT MANAGE_SERVICE INSTALL_MODE
 export XDG_CONFIG_HOME := $(XDG_CONFIG)
 
 .PHONY: all help build inspect install uninstall dist clean test test-release test-packaging test-install \
@@ -46,7 +53,8 @@ help:
 	@echo 'make start|stop; make test|test-release|test-packaging|test-install'
 	@echo 'make toolchain installs the selected musl target into an existing rustup toolchain.'
 	@echo 'make release runs semantic-release (maintainers/CI only).'
-	@echo 'MANAGE_SERVICE=0 stages local files without enabling/stopping services.'
+	@echo 'INSTALL_MODE=plugin installs the binary without standalone integration or service activation.'
+	@echo 'MANAGE_SERVICE=0 suppresses service actions only; standalone config writes still occur.'
 
 build:
 	cargo build --release --locked --target "$(RUST_TARGET)"
@@ -105,16 +113,16 @@ build-omarchy:
 	cp manifest.json Service.qml LICENSE README.md dist/omarchy/zanzythebar.workspace-indicator/
 inspect-omarchy: build-omarchy
 	omarchy plugin validate dist/omarchy/zanzythebar.workspace-indicator
-install-omarchy: inspect-omarchy
-	@command -v workspace-indicator >/dev/null || { echo 'Install the binary first (make install, install-deb, install-aur, or install-tar).'; exit 1; }
+install-omarchy:
+	@command -v omarchy >/dev/null && command -v git >/dev/null || { echo 'Omarchy Quattro and Git are required.'; exit 1; }
+	@command -v workspace-indicator >/dev/null || { echo 'Install the native dependency first with INSTALL_MODE=plugin (see README quick start).'; exit 1; }
+	@workspace-indicator --help | grep -q -- --plugin-managed || { echo 'Update the native binary: this plugin requires --plugin-managed support.'; exit 1; }
 	@test ! -e "$(PLUGIN_DIR)" || { echo 'Plugin directory exists; uninstall it before replacing it.'; exit 1; }
-	bash scripts/manage-service.sh stop
-	mkdir -p "$(PLUGIN_DIR)"
-	cp dist/omarchy/zanzythebar.workspace-indicator/* "$(PLUGIN_DIR)/"
-	omarchy-shell shell rescanPlugins
-	omarchy plugin enable zanzythebar.workspace-indicator
+	@if command -v systemctl >/dev/null && { systemctl --user is-active --quiet workspace-indicator.service || systemctl --user is-enabled --quiet workspace-indicator.service; }; then echo 'Disable the standalone service first: systemctl --user disable --now workspace-indicator.service (see README migration steps).'; exit 1; fi
+	@if grep -Eq 'systemctl.*workspace-indicator' "$(HYPR_CONF_DIR)/workspace-indicator.local.conf" "$(HYPR_DIR)/workspace-indicator.lua" 2>/dev/null; then echo 'Standalone Hyprland integration exists; migrate it explicitly first (see README).'; exit 1; fi
+	omarchy plugin add https://github.com/ZanzyTHEbar/workspace-indicator.git --enable
 uninstall-omarchy:
-	omarchy plugin remove zanzythebar.workspace-indicator --yes
+	omarchy plugin remove zanzythebar.workspace-indicator
 
 start:
 	bash scripts/manage-service.sh start

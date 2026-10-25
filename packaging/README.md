@@ -19,23 +19,40 @@ to an existing rustup installation; a suitable cross-linker is also required.
 
 ## AUR
 
+For plugin ownership, first ensure the recipe pins a native release whose help
+lists `--plugin-managed`. Older releases lack this flag; if the recipe is too old,
+use the [source-build quick start](../README.md#omarchy-quattro-quick-start-manual-dependency-install)
+instead. Standalone installation does not require this flag.
+
 ```sh
 make build-aur
 make inspect-aur
 make install-aur
 ```
 
-The binary package requires no Rust compiler.
+The local binary package requires Git, Make, and Arch base-devel/makepkg, but no
+Rust compiler. There is no published AUR listing at present; this is a local
+recipe, not a claim that `yay -S workspace-indicator-bin` works. Use
+`make install-aur INSTALL_MODE=plugin` for plugin ownership with a compatible
+native release. See the README quick start.
 
 ## Omarchy Quattro
 
 The service plugin runs an installed binary as a child of the shell. The Make
-targets stage just the manifest, entry point, license, and README—not a Git clone.
-Validation delegates to `omarchy plugin validate`. Installation refuses to replace
-an existing directory; removal delegates to `omarchy plugin remove --yes`.
+build/inspect targets stage just the manifest, entry point, license, and README
+for development. Validation delegates to `omarchy plugin validate`. Installation
+uses `omarchy plugin add https://github.com/ZanzyTHEbar/workspace-indicator.git --enable`
+after preflight; it never copies that staging folder into the user's plugin directory.
+Official `omarchy plugin update` works on the resulting Git checkout; remove keeps
+its confirmation. An existing non-Git directory must be explicitly removed first;
+official remove preserves it in a timestamped backup. See the README migration.
 
-The binary must already be installed and on the shell's PATH. Disable any Hyprland
-autostart snippet that starts the systemd service before enabling this plugin.
+The binary must already be installed with `--plugin-managed` support and on the
+shell's PATH. Use `INSTALL_MODE=plugin` with local/tar/package install targets to
+avoid standalone setup/service activation. `MANAGE_SERVICE=0` alone suppresses
+service actions, not config writes. Disable the standalone service and migrate
+Hyprland autostart explicitly before enabling this plugin. Native package updates
+are independent of Git plugin updates; restart the plugin after updating the binary.
 Removal leaves the separate binary and personal config intact.
 
 ## Debian

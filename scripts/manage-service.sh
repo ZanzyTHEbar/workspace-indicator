@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 [[ "${MANAGE_SERVICE:-1}" == 1 ]] || exit 0
+# Package install targets share the same opt-in ownership mode as user installs.
+[[ "${INSTALL_MODE:-standalone}" != plugin ]] || exit 0
 if ! command -v systemctl >/dev/null || [[ -z "${XDG_RUNTIME_DIR:-}" ]]; then
   echo 'No user service session; use make start inside your Wayland session.'
   exit 0

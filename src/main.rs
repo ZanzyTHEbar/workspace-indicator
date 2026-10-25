@@ -217,6 +217,7 @@ unsafe fn epoll_del(epfd: RawFd, fd: RawFd) {
 }
 
 struct Daemon {
+    plugin_managed: bool,
     wl: WaylandClient,
     loader: ConfigLoader,
     cfg: Config,
@@ -281,7 +282,7 @@ impl Daemon {
     }
 
     fn apply_reloaded_config(&mut self, new_cfg: Config) {
-        if self.cfg.hyprland_conf_bind() != new_cfg.hyprland_conf_bind() {
+        if !self.plugin_managed && self.cfg.hyprland_conf_bind() != new_cfg.hyprland_conf_bind() {
             let _ = ipc::hypr_request(self.cfg.hyprland_keyword_unbind().as_bytes());
             let _ = ipc::hypr_request(new_cfg.hyprland_keyword_bindd().as_bytes());
             let _ = sync_hyprland_files(&new_cfg);
@@ -380,6 +381,7 @@ fn print_usage() {
            --peek                              Trigger OSD peek on running instance (SIGUSR1)\n  \
            --reload                            Reload config & theme on running instance (SIGUSR2)\n  \
            --sync-hyprland                     Write Hyprland .conf and .lua integration files\n  \
+           --plugin-managed                    Do not write integration files or manage keybindings\n  \
            --print-hyprland-conf               Print Hyprland latest .conf snippet\n  \
            --print-hyprland-lua                Print Hyprland 0.56+ / Omarchy 4 Lua snippet\n  \
            -h, --help                          Show this help"
@@ -394,6 +396,7 @@ fn main() {
     let mut mode_sync = false;
     let mut mode_print_conf = false;
     let mut mode_print_lua = false;
+    let mut plugin_managed = false;
 
     let mut args = env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -401,6 +404,7 @@ fn main() {
             "--peek" => mode_peek = true,
             "--reload" => mode_reload = true,
             "--sync-hyprland" => mode_sync = true,
+            "--plugin-managed" => plugin_managed = true,
             "--print-hyprland-conf" => mode_print_conf = true,
             "--print-hyprland-lua" => mode_print_lua = true,
             "--position" | "-p" => {
@@ -448,6 +452,10 @@ fn main() {
         return;
     }
     if mode_sync {
+        if plugin_managed {
+            eprintln!("workspace-indicator: --sync-hyprland conflicts with --plugin-managed");
+            std::process::exit(1);
+        }
         if let Err(e) = sync_hyprland_files(&cfg) {
             eprintln!("workspace-indicator: failed to sync Hyprland files: {e}");
             std::process::exit(1);
@@ -463,10 +471,12 @@ fn main() {
     // Block SIGUSR1/SIGUSR2/SIGTERM/SIGINT immediately via signalfd before publishing PID
     let sfd = unsafe { create_signalfd() };
 
-    let _ = sync_hyprland_files(&cfg);
-    if cfg.hyprland_conf_bind() != "$mainMod, grave" {
-        let _ = ipc::hypr_request(b"keyword unbind SUPER, grave");
-        let _ = ipc::hypr_request(cfg.hyprland_keyword_bindd().as_bytes());
+    if !plugin_managed {
+        let _ = sync_hyprland_files(&cfg);
+        if cfg.hyprland_conf_bind() != "$mainMod, grave" {
+            let _ = ipc::hypr_request(b"keyword unbind SUPER, grave");
+            let _ = ipc::hypr_request(cfg.hyprland_keyword_bindd().as_bytes());
+        }
     }
 
     let wl = match WaylandClient::connect() {
@@ -515,6 +525,7 @@ fn main() {
     }
 
     let mut daemon = Daemon {
+        plugin_managed,
         wl,
         loader,
         cfg,

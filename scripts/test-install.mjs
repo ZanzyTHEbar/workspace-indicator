@@ -56,7 +56,7 @@ try {
   const tools = join(tmp, 'tools');
   mkdirSync(tools);
   const log = join(tmp, 'systemctl.log');
-  writeFileSync(join(tools, 'systemctl'), '#!/bin/bash\nprintf "%s\\n" "$*" >> "$TEST_SERVICE_LOG"\n');
+  writeFileSync(join(tools, 'systemctl'), '#!/bin/bash\nprintf "%s\\n" "$*" >> "$TEST_SERVICE_LOG"\ncase "$*" in\n  *is-active*) exit 1 ;;\n  *is-enabled*) exit "${TEST_SERVICE_ENABLED:-1}" ;;\nesac\n');
   chmodSync(join(tools, 'systemctl'), 0o755);
   const serviceEnv = { ...env, MANAGE_SERVICE: '1', PATH: `${tools}:${env.PATH}`,
     TEST_SERVICE_LOG: log, XDG_RUNTIME_DIR: tmp, WAYLAND_DISPLAY: 'wayland-test' };
@@ -72,19 +72,26 @@ try {
     writeFileSync(join(tools, tool), '#!/bin/bash\nprintf "%s\\n" "$*" >> "$TEST_PLUGIN_LOG"\n');
     chmodSync(join(tools, tool), 0o755);
   }
-  writeFileSync(join(tools, 'workspace-indicator'), '#!/bin/sh\nexit 0\n');
+  writeFileSync(join(tools, 'workspace-indicator'), '#!/bin/sh\necho --plugin-managed\n');
   chmodSync(join(tools, 'workspace-indicator'), 0o755);
   const pluginEnv = { ...serviceEnv, TEST_PLUGIN_LOG: pluginLog };
+  const beforePreflight = readFileSync(log, 'utf8');
+  assert.throws(() => execFileSync('make', ['install-omarchy'], {
+    env: { ...pluginEnv, TEST_SERVICE_ENABLED: '0' }, stdio: 'pipe'
+  }), error => error.status !== 0 && error.stdout.toString().includes('systemctl --user disable --now workspace-indicator.service'));
+  assert.ok(!existsSync(pluginLog), 'Enabled-but-stopped service must prevent official plugin add');
+  const preflightCalls = readFileSync(log, 'utf8').slice(beforePreflight.length);
+  assert.equal(preflightCalls, '--user is-active --quiet workspace-indicator.service\n--user is-enabled --quiet workspace-indicator.service\n', 'Preflight must only query service state');
   execFileSync('make', ['install-omarchy'], { env: pluginEnv });
   const pluginDir = join(config, 'omarchy/plugins/zanzythebar.workspace-indicator');
-  assert.ok(existsSync(join(pluginDir, 'manifest.json')));
-  assert.ok(!existsSync(join(pluginDir, '.git')));
+  assert.ok(!existsSync(pluginDir), 'Make must delegate installation, not copy files');
+  mkdirSync(pluginDir, { recursive: true }); // Simulate the official installer owning its destination.
   assert.throws(() => execFileSync('make', ['install-omarchy'], { env: pluginEnv, stdio: 'pipe' }));
   execFileSync('make', ['uninstall-omarchy'], { env: pluginEnv });
   const pluginCalls = readFileSync(pluginLog, 'utf8');
-  assert.match(pluginCalls, /plugin validate/);
-  assert.match(pluginCalls, /plugin enable zanzythebar.workspace-indicator/);
-  assert.match(pluginCalls, /plugin remove zanzythebar.workspace-indicator --yes/);
+  assert.match(pluginCalls, /plugin add https:\/\/github.com\/ZanzyTHEbar\/workspace-indicator.git --enable/);
+  assert.match(pluginCalls, /plugin remove zanzythebar.workspace-indicator\n/);
+  assert.ok(!pluginCalls.includes('--yes'), 'Official consent must be preserved');
 
   const packageLog = join(tmp, 'packages.log');
   for (const tool of ['apt', 'pacman']) {

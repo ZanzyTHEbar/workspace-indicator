@@ -10,8 +10,17 @@ SYSTEMD_USER_DIR="${SYSTEMD_USER_DIR:-$XDG_CONFIG/systemd/user}"
 HYPR_DIR="${HYPR_DIR:-$XDG_CONFIG/hypr}"
 HYPR_CONF_DIR="${HYPR_CONF_DIR:-$HYPR_DIR/config}"
 OMARCHY_HOOKS_ROOT="${OMARCHY_HOOKS_ROOT:-$XDG_CONFIG/omarchy/hooks}"
+INSTALL_MODE="${INSTALL_MODE:-standalone}"
+case "$INSTALL_MODE" in
+  standalone|plugin) ;;
+  *) echo 'INSTALL_MODE must be standalone or plugin' >&2; exit 1 ;;
+esac
 
 if [[ "${1:-}" == --uninstall ]]; then
+  if [[ "$INSTALL_MODE" == plugin ]]; then
+    rm -f "$BINDIR/workspace-indicator"
+    exit 0
+  fi
   bash "$ROOT_DIR/scripts/manage-service.sh" stop
   rm -f "$BINDIR/workspace-indicator" "$BINDIR/workspace-indicator-focusd" \
     "$SYSTEMD_USER_DIR/workspace-indicator.service" \
@@ -23,6 +32,7 @@ fi
 [[ $# == 0 ]] || { echo 'Usage: install.sh [--uninstall]' >&2; exit 1; }
 
 /usr/bin/install -Dm755 "$ROOT_DIR/workspace-indicator" "$BINDIR/workspace-indicator"
+[[ "$INSTALL_MODE" == standalone ]] || exit 0
 /usr/bin/install -Dm755 "$ROOT_DIR/scripts/workspace-indicator-focusd" "$BINDIR/workspace-indicator-focusd"
 /usr/bin/install -Dm644 "$ROOT_DIR/systemd/workspace-indicator.service" "$SYSTEMD_USER_DIR/workspace-indicator.service"
 
