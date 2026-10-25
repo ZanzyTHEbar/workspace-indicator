@@ -65,10 +65,12 @@ different host architecture. `RUST_TARGET` remains available for custom toolchai
 ### Use downloaded packages without compiling
 
 Download your matching artifact from [Releases](https://github.com/ZanzyTHEbar/workspace-indicator/releases).
-amd64 and arm64 `.deb` packages are available since v0.4.2. Then, from this checkout:
+amd64 and arm64 `.deb` packages are available since v0.4.2. From this checkout,
+replace the `PACKAGE` path below with the exact downloaded filename for your
+version and architecture:
 
 ```sh
-make inspect-deb install-deb PACKAGE="$HOME/Downloads/workspace-indicator_0.5.0-1_amd64.deb"
+make inspect-deb install-deb PACKAGE="/path/to/downloaded-package.deb"
 # Or a downloaded x86_64 / aarch64 release tarball:
 make inspect-tar install-tar ARCHIVE="$HOME/Downloads/workspace-indicator-linux-x86_64.tar.gz"
 ```
