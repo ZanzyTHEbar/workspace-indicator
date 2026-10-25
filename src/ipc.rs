@@ -147,7 +147,7 @@ fn niri_request(cmd: &[u8]) -> Option<String> {
 
 pub fn parse_sway_workspaces(js: &str, max_ws: usize, per_monitor: bool) -> WorkspaceState {
     let objs = split_top_level_objects(js);
-    let mut active_ws = 1usize;
+    let mut active_ws = 0usize;
     let mut focused_output = String::new();
 
     for &obj in &objs {

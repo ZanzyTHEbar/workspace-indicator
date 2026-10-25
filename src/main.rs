@@ -238,8 +238,8 @@ impl Daemon {
     fn recompute_layout(&mut self) {
         self.layout = compute_pill_layout_morphed(
             &self.cfg,
-            self.ws_state.active_ws.max(1),
-            self.prev_ws.max(1),
+            self.ws_state.active_ws,
+            self.prev_ws,
             self.morph_t,
             &self.ws_state.occupied,
             &self.urgent,
@@ -478,7 +478,7 @@ fn main() {
     };
 
     let ws_state = ipc::query_workspace_state(cfg.max_workspaces, cfg.per_monitor);
-    let active_ws = ws_state.active_ws.max(1);
+    let active_ws = ws_state.active_ws;
     let urgent = vec![false; cfg.max_workspaces + 1];
     let layout = compute_pill_layout_morphed(
         &cfg,
