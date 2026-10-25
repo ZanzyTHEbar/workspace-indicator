@@ -14,6 +14,7 @@ const arch = process.arch === 'arm64' ? 'arm64' : 'amd64';
 const rustArch = process.arch === 'arm64' ? 'aarch64' : 'x86_64';
 const binary = `target/${rustArch}-unknown-linux-musl/release/workspace-indicator`;
 const tmp = mkdtempSync(join(tmpdir(), 'workspace-packaging-test-'));
+const originalEpoch = process.env.SOURCE_DATE_EPOCH;
 try {
   const pkg = build(binary, arch, tmp);
   const control = execFileSync('ar', ['p', pkg, 'control.tar.xz']);
@@ -25,9 +26,20 @@ try {
   assert.deepEqual(extract(data, './usr/share/doc/workspace-indicator/copyright'), readFileSync('LICENSE'));
   const listing = execFileSync('tar', ['-tvJ', '--numeric-owner'], { input: data }).toString();
   assert.match(listing, /^-rwxr-xr-x\s+0\/0\s+.*\.\/usr\/bin\/workspace-indicator$/m);
+  const timestampListing = archive => execFileSync('tar', ['-tvJ', '--full-time', '--utc'], { input: archive }).toString();
+  const epoch = originalEpoch ?? execFileSync('git', ['log', '-1', '--format=%ct'], { encoding: 'utf8' }).trim();
+  const timestamp = new Date(Number(epoch) * 1000).toISOString().slice(0, 19).replace('T', ' ');
+  assert.ok(timestampListing(data).includes(timestamp), 'Payload should use the explicit epoch or source commit time');
+  process.env.SOURCE_DATE_EPOCH = '0';
+  const reproducible = readFileSync(build(binary, arch, tmp));
+  const overriddenData = execFileSync('ar', ['p', pkg, 'data.tar.xz']);
+  assert.ok(timestampListing(overriddenData).includes('1970-01-01 00:00:00'), 'Explicit zero epoch should be preserved');
+  assert.deepEqual(readFileSync(build(binary, arch, tmp)), reproducible, 'Same source and epoch should produce identical packages');
   assert.throws(() => build(binary, arch === 'amd64' ? 'arm64' : 'amd64', tmp), /architecture/);
   assert.throws(() => build(binary, 'invalid', tmp), /Expected amd64 or arm64/);
 } finally {
+  if (originalEpoch === undefined) delete process.env.SOURCE_DATE_EPOCH;
+  else process.env.SOURCE_DATE_EPOCH = originalEpoch;
   rmSync(tmp, { recursive: true, force: true });
 }
 console.log('packaging checks passed');

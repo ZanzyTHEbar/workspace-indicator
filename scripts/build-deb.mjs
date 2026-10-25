@@ -15,7 +15,15 @@ export function build(binary, arch, output = 'dist') {
   const packageSection = readFileSync('Cargo.toml', 'utf8').match(/^\[package\]\s*\n([\s\S]*?)(?=^\[|$(?![\s\S]))/m)?.[1];
   const version = packageSection?.match(/^version = "([0-9A-Za-z.+-]+)"$/m)?.[1];
   if (!version) throw new Error('Cargo package version not found');
-  const epoch = process.env.SOURCE_DATE_EPOCH ?? '0';
+  let epoch = process.env.SOURCE_DATE_EPOCH;
+  if (epoch === undefined) {
+    try {
+      epoch = execFileSync('git', ['log', '-1', '--format=%ct'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    } catch {
+      // Source archives need an explicit epoch for reproducible builds.
+      epoch = String(Math.floor(Date.now() / 1000));
+    }
+  }
   if (!/^\d+$/.test(epoch)) throw new Error('Invalid SOURCE_DATE_EPOCH');
   mkdirSync(output, { recursive: true });
   const destination = resolve(output, `workspace-indicator_${version}-1_${arch}.deb`);

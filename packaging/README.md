@@ -44,3 +44,9 @@ Prebuilt amd64 and arm64 packages are available on GitHub Releases. Local builds
 require Node.js, GNU tar, xz, and binutils `ar`. The Make targets handle the builder,
 control/payload inspection, and APT installation/removal. No maintainer script
 runs user services as root; Make activates the service from the invoking user's session.
+
+Debian payload timestamps default to the source Git commit time. Set
+`SOURCE_DATE_EPOCH` to a nonnegative Unix timestamp to override it (including `0`).
+Outside Git, builds use the current build time; set `SOURCE_DATE_EPOCH` explicitly
+for reproducible builds from source archives. The outer `ar` archive retains
+deterministic metadata.
