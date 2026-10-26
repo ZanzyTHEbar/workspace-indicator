@@ -1,3 +1,10 @@
+## [0.6.1](https://github.com/ZanzyTHEbar/workspace-indicator/compare/v0.6.0...v0.6.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* **sway:** preserve workspace focus with floats ([2813888](https://github.com/ZanzyTHEbar/workspace-indicator/commit/2813888e7c95e7b6e0564054ec620dfa444cf789))
+
 # [0.6.0](https://github.com/ZanzyTHEbar/workspace-indicator/compare/v0.5.2...v0.6.0) (2026-10-25)
 
 
