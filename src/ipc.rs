@@ -146,11 +146,16 @@ fn niri_request(cmd: &[u8]) -> Option<String> {
 }
 
 pub fn parse_sway_workspaces(js: &str, max_ws: usize, per_monitor: bool) -> WorkspaceState {
-    let objs = split_top_level_objects(js);
+    // GET_WORKSPACES includes floating window nodes before the workspace's
+    // focused field. Their focus flags must not determine workspace focus.
+    let objs: Vec<_> = split_top_level_objects(js)
+        .into_iter()
+        .map(strip_nested_objects)
+        .collect();
     let mut active_ws = 0usize;
     let mut focused_output = String::new();
 
-    for &obj in &objs {
+    for obj in &objs {
         if json_key_bool(obj, "focused").unwrap_or(false) {
             if let Some(num) = json_key_int(obj, "num") {
                 if num >= 1 {
@@ -166,7 +171,7 @@ pub fn parse_sway_workspaces(js: &str, max_ws: usize, per_monitor: bool) -> Work
     let mut urgent = vec![false; max_ws + 1];
     let mut occ_max = 0usize;
 
-    for obj in objs {
+    for obj in &objs {
         let Some(num) = json_key_int(obj, "num") else {
             continue;
         };
@@ -892,6 +897,19 @@ mod tests {
         assert_eq!(
             resolve_urgent_workspace_from_clients(clients, "559c47964e20", 10),
             Some(4)
+        );
+    }
+
+    #[test]
+    fn sway_get_workspaces_preserves_focus_with_an_unfocused_floating_window() {
+        // Captured from Sway 1.11 GET_WORKSPACES: a floating Zenity dialog and
+        // a focused tiled Kitty window. Sway appends workspace focus last.
+        let reply = include_str!("../tests/fixtures/sway-get-workspaces.json");
+        let state = parse_sway_workspaces(reply, 32, true);
+        assert_eq!(
+            (state.active_ws, state.target_monitor.map(|m| m.name)),
+            (1, Some("HEADLESS-1".to_string())),
+            "window focus must not hide the focused workspace or its output"
         );
     }
 
