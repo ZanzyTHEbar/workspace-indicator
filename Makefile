@@ -9,7 +9,14 @@ ARCH_SUFFIX ?= $(firstword $(subst -, ,$(RUST_TARGET)))
 DEB_ARCH = $(if $(filter x86_64,$(ARCH_SUFFIX)),amd64,$(if $(filter aarch64,$(ARCH_SUFFIX)),arm64,unsupported))
 VERSION := $(shell sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)
 TARGET := workspace-indicator
-RELEASE_BIN = target/$(RUST_TARGET)/release/$(TARGET)
+CARGO_TARGET_DIR ?= target
+RELEASE_BIN = $(CARGO_TARGET_DIR)/$(RUST_TARGET)/release/$(TARGET)
+RUST_HOST = $(shell rustc -vV | sed -n 's/^host: //p')
+MUSL_LINKER = $(shell rustc --print sysroot)/lib/rustlib/$(RUST_HOST)/bin/rust-lld
+# Rust supplies the musl CRT; a C driver would add a second, incompatible CRT.
+CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER ?= $(MUSL_LINKER)
+CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER ?= $(MUSL_LINKER)
+export CARGO_TARGET_DIR
 PREBUILT ?= $(if $(wildcard src/main.rs),0,1)
 ARCHIVE ?= workspace-indicator-linux-$(ARCH_SUFFIX).tar.gz
 DEB_PACKAGE = $(abspath dist/workspace-indicator_$(VERSION)-1_$(DEB_ARCH).deb)
@@ -57,7 +64,15 @@ help:
 	@echo 'MANAGE_SERVICE=0 suppresses service actions only; standalone config writes still occur.'
 
 build:
+	CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER="$(CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER)" \
+	CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER="$(CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER)" \
 	cargo build --release --locked --target "$(RUST_TARGET)"
+	@if [[ "$(RUST_TARGET)" == *-linux-musl ]]; then \
+		elf="$$(readelf -l -d "$(RELEASE_BIN)")"; \
+		if grep -Eq 'INTERP|\(NEEDED\)' <<< "$$elf"; then \
+			echo 'Release binary must be fully static (no interpreter or shared libraries).' >&2; exit 1; \
+		fi; \
+	fi
 	cp "$(RELEASE_BIN)" "$(TARGET)"
 toolchain:
 	rustup target add "$(RUST_TARGET)"
@@ -73,7 +88,8 @@ dist: build-tar
 build-tar: build
 	tar -czf "$(ARCHIVE)" LICENSE Cargo.toml Makefile install.sh scripts/manage-service.sh scripts/manage-tar.sh \
 		$(TARGET) scripts/workspace-indicator-focusd systemd/workspace-indicator.service \
-		hyprland/workspace-indicator.conf hyprland/workspace-indicator.lua omarchy/theme-set-hook
+		hyprland/workspace-indicator.conf hyprland/workspace-indicator.lua omarchy/theme-set-hook \
+		assets/fonts/LICENSE assets/fonts/README.md native/licenses
 inspect-tar:
 	tar -tzf "$(ARCHIVE)"
 install-tar:

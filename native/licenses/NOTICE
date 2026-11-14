@@ -1,0 +1,11 @@
+This software is based in part on the work of the FreeType Team.
+https://freetype.org/
+
+The embedded Lato Medium font is by tyPoland Łukasz Dziedzic, with the
+Reserved Font Name "Lato", under the SIL Open Font License 1.1.
+The full font notice/license is distributed separately in assets/fonts/LICENSE
+(or the package's fonts/license documentation directory).
+
+Fontconfig 2.18.3 and Expat 2.10.0 are statically linked under their included
+MIT-like/MIT notices. FreeType 2.15.0 is used under the FreeType License;
+additional bundled-component notices are included alongside it.

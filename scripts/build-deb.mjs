@@ -1,6 +1,6 @@
 // Use the system tar/ar tools; no npm packaging dependencies are needed.
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -51,6 +51,11 @@ Description: Lightweight workspace OSD for layer-shell Wayland compositors
       'ExecStart=%h/.local/bin/workspace-indicator', 'ExecStart=/usr/bin/workspace-indicator');
     put('data/usr/lib/systemd/user/workspace-indicator.service', unit);
     put('data/usr/share/doc/workspace-indicator/copyright', readFileSync('LICENSE'));
+    put('data/usr/share/doc/workspace-indicator/fonts/LICENSE', readFileSync('assets/fonts/LICENSE'));
+    put('data/usr/share/doc/workspace-indicator/fonts/README.md', readFileSync('assets/fonts/README.md'));
+    for (const license of readdirSync('native/licenses')) {
+      put(`data/usr/share/doc/workspace-indicator/native/${license}`, readFileSync(`native/licenses/${license}`));
+    }
     for (const source of ['hyprland/workspace-indicator.conf', 'hyprland/workspace-indicator.lua', 'omarchy/theme-set-hook']) {
       put(`data/usr/share/workspace-indicator/${source}`, readFileSync(source));
     }

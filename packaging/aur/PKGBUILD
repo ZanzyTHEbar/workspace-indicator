@@ -5,7 +5,7 @@ pkgrel=1
 pkgdesc="Zero-dependency static Wayland workspace OSD for Hyprland, Sway, Niri, and Omarchy"
 arch=('x86_64' 'aarch64')
 url="https://github.com/ZanzyTHEbar/workspace-indicator"
-license=('MIT')
+license=('MIT' 'OFL-1.1' 'FTL')
 provides=('workspace-indicator')
 conflicts=('workspace-indicator')
 source_x86_64=("${pkgname}-${pkgver}-x86_64.tar.gz::${url}/releases/download/v${pkgver}/workspace-indicator-linux-x86_64.tar.gz")
@@ -24,4 +24,13 @@ package() {
   install -Dm644 "${srcdir}/hyprland/workspace-indicator.lua" "${pkgdir}/usr/share/workspace-indicator/hyprland/workspace-indicator.lua"
   install -Dm755 "${srcdir}/omarchy/theme-set-hook" "${pkgdir}/usr/share/workspace-indicator/omarchy/theme-set-hook"
   install -Dm644 "${srcdir}/LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  # Older pinned release archives predate the embedded font.
+  if [[ -f "${srcdir}/assets/fonts/LICENSE" ]]; then
+    install -Dm644 "${srcdir}/assets/fonts/LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/Lato"
+    install -Dm644 "${srcdir}/assets/fonts/README.md" "${pkgdir}/usr/share/doc/${pkgname}/fonts.md"
+  fi
+  for notice in "${srcdir}"/native/licenses/*; do
+    [[ -f "$notice" ]] || continue
+    install -Dm644 "$notice" "${pkgdir}/usr/share/licenses/${pkgname}/$(basename "$notice")"
+  done
 }

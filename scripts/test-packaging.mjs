@@ -12,7 +12,7 @@ assert.ok(existsSync(plugin.entryPoints.service));
 assert.ok(['x64', 'arm64'].includes(process.arch), 'Unsupported test host architecture');
 const arch = process.arch === 'arm64' ? 'arm64' : 'amd64';
 const rustArch = process.arch === 'arm64' ? 'aarch64' : 'x86_64';
-const binary = `target/${rustArch}-unknown-linux-musl/release/workspace-indicator`;
+const binary = `${process.env.CARGO_TARGET_DIR || 'target'}/${rustArch}-unknown-linux-musl/release/workspace-indicator`;
 const tmp = mkdtempSync(join(tmpdir(), 'workspace-packaging-test-'));
 const originalEpoch = process.env.SOURCE_DATE_EPOCH;
 try {
@@ -24,6 +24,8 @@ try {
   assert.match(extract(data, './usr/lib/systemd/user/workspace-indicator.service').toString(), /^ExecStart=\/usr\/bin\/workspace-indicator$/m);
   assert.deepEqual(extract(data, './usr/bin/workspace-indicator'), readFileSync(binary));
   assert.deepEqual(extract(data, './usr/share/doc/workspace-indicator/copyright'), readFileSync('LICENSE'));
+  assert.deepEqual(extract(data, './usr/share/doc/workspace-indicator/fonts/LICENSE'), readFileSync('assets/fonts/LICENSE'));
+  assert.deepEqual(extract(data, './usr/share/doc/workspace-indicator/native/FreeType.txt'), readFileSync('native/licenses/FreeType.txt'));
   const listing = execFileSync('tar', ['-tvJ', '--numeric-owner'], { input: data }).toString();
   assert.match(listing, /^-rwxr-xr-x\s+0\/0\s+.*\.\/usr\/bin\/workspace-indicator$/m);
   const timestampListing = archive => execFileSync('tar', ['-tvJ', '--full-time', '--utc'], { input: archive }).toString();

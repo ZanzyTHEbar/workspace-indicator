@@ -4,12 +4,12 @@
   <img src="assets/demo.gif" alt="workspace-indicator demo" width="840" />
 </p>
 
-Hyper-performant Wayland workspace OSD for **Hyprland** (`0.56+` `.conf` & `.lua`), **Sway**, **Niri**, and **Omarchy** (Quattro / v4 & v3) written in pure Rust (`0` crate dependencies, 100% static `musl` binary, `~700 KB` RSS).
+Wayland workspace OSD for **Hyprland** (`0.56+` `.conf` & `.lua`), **Sway**, **Niri**, and **Omarchy** (Quattro / v4 & v3), implemented in Rust with a narrow C font bridge and statically linked Fontconfig, FreeType, and Expat. Zero Cargo dependencies; standalone static `musl` binaries with no runtime shared-library requirements.
 
 - **Raw Wayland Wire Protocol (`wl_shm` + `zwlr_layer_shell_v1`):** Speaks the Wayland wire protocol directly over `$WAYLAND_DISPLAY` with a double-buffered `memfd_create` shared-memory pool. Zero GTK, zero Cairo, zero GLib, zero dynamic `.so` dependencies (`static-pie linked`).
-- **Native Fractional HiDPI (`wp_fractional_scale_v1` + `wp_viewporter`):** Renders SDF geometry at exact physical device pixels (`1.25x`, `1.5x`, `2.0x`) with 1-physical-pixel smoothstep anti-aliasing and zero compositor resampling blur.
+- **Native Fractional HiDPI (`wp_fractional_scale_v1` + `wp_viewporter`):** Renders SDF geometry and hinted, grayscale-antialiased numeric labels at the output's physical scale (`1.25x`, `1.5x`, `2.0x`), rather than upscaling a logical-resolution raster.
 - **Sub-Pixel SDF Capsule Rasterizer, Morph Animation & Urgent Dots:** Renders the frosted pill, workspace dots, a stretching active-dot capsule transition, and urgent-workspace highlights (`urgent>>` + theme `red` token) through a single analytical Signed Distance Field (SDF) function.
-- **Single-Threaded `epoll` State Machine:** Multiplexes the Wayland socket, compositor event stream (`.socket2.sock` / `$SWAYSOCK` / `$NIRI_SOCKET`), `signalfd` (`SIGUSR1`/`SIGUSR2`/`SIGTERM`), `inotify` (live theme/config hot-reload), and `timerfd` in 1 thread (`~700 KB` RSS, zero child process forks).
+- **`epoll` Event Loop:** Multiplexes the Wayland socket, compositor event stream (`.socket2.sock` / `$SWAYSOCK` / `$NIRI_SOCKET`), `signalfd` (`SIGUSR1`/`SIGUSR2`/`SIGTERM`), `inotify` (live theme/config hot-reload), and `timerfd` in the Rust event loop. Font discovery and rasterization run in-process, without font-resolution child processes.
 - **4-Edge Positioning (`top`, `bottom`, `left`, `right`):** `left` and `right` automatically swap axes and rotate the pill 90° vertically.
 - **Omarchy Quattro & Dragonarchy Auto-Theming:** Watches `~/.local/state/omarchy/current/theme/colors.toml` (Omarchy 4), `~/.config/omarchy/current/theme/colors.toml` (Omarchy 3), and `~/.config/current/theme/hyprland-palette.conf` (Dragonarchy) via `inotify`, plus 10 built-in presets (`catppuccin-mocha`, `catppuccin-latte`, `tokyo-night`, `gruvbox`, `nord`, `rose-pine`, `kanagawa`, `everforest`, `matte-black`, `ristretto`).
 - **Dual Hyprland Integration (`.conf` + `.lua`) & Live Keybind Sync:** Emits both `workspace-indicator.local.conf` and `workspace-indicator.lua` (`hl.layer_rule` + `o.bind`/`hl.bind`), and dynamically applies custom keybinds over `.socket.sock`.
@@ -22,8 +22,9 @@ sudo, resolve dependencies, or build Rust. Review the repository before enabling
 its unsandboxed code. Omarchy 3 users should use the standalone install below.
 
 The source-build route uses this checkout's native implementation. Prerequisites: Git, GNU Make,
-Bash, and Rust/Cargo through an existing rustup installation. `make toolchain`
-adds the host's musl target; no GTK/Cairo headers are needed. If migrating an
+Bash, a C/C++ toolchain, Python 3.10+, Ninja, pkg-config, gperf, curl, xz, binutils, and Rust/Cargo
+through an existing rustup installation. `make toolchain` adds the host's musl
+target; no GTK/Cairo headers are needed. If migrating an
 existing installation, complete the ownership migration below before enabling
 the plugin.
 
@@ -156,6 +157,10 @@ Build/inspect-omarchy only stage and validate developer files under `dist/`.
 
 - **Source/tarball builds:** Rust/Cargo via rustup, GNU Make, Bash, and GNU tar.
   `make toolchain` installs the selected musl target. No GTK/Cairo headers required.
+  Native fonts additionally need a C/C++ host toolchain, Python 3.10+, Ninja, pkg-config, gperf, curl,
+  xz, and binutils. The build downloads checksum-pinned Zig and native sources;
+  see [native builds and licenses](native/README.md). Release binaries remain
+  fully static and require none of these build tools at runtime.
 - **Debian builds:** also Node.js, xz, and binutils (`ar`). Debian inspection
   requires only `ar` and tar.
 - **AUR builds:** Arch `base-devel`/`makepkg`. No Rust compiler needed: the recipe
@@ -170,8 +175,8 @@ make toolchain ARCH=aarch64
 make build-tar build-deb ARCH=aarch64
 ```
 
-Cross-compilation also requires a suitable linker configured through Cargo, e.g.
-`CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER`. Never cross-install onto a
+The Makefile uses Rust's bundled linker and the pinned musl native closure
+for both architectures; no system cross-linker is required. Never cross-install onto a
 different host architecture. `RUST_TARGET` remains available for custom toolchains.
 
 ### Use downloaded packages without compiling
@@ -242,6 +247,9 @@ See [distribution packaging](packaging/README.md) for release and publication de
 
 ```lua
 return {
+  style = "dots",           -- "dots" (default) | "numbers"
+  font_family = "",         -- empty = embedded Lato Medium; otherwise installed Fontconfig family
+  font_size = 14,           -- logical px, 8–48; numbers only
   position = "bottom",      -- "bottom" | "top" | "left" | "right" (left/right rotate pill 90deg)
   margin = 60,              -- distance in px from anchored screen edge
   per_monitor = false,      -- true = only show workspaces belonging to the focused monitor
@@ -268,6 +276,22 @@ Numeric workspaces 1–32 are supported; `max_workspaces` defaults to 32 and can
 be lowered. Five slots remain visible by default (`persistent_workspaces = 5`);
 additional slots appear as needed. Sway workspaces without a positive numeric
 `num` are not mapped to indicator slots.
+
+`style = "numbers"` shows upright, stationary labels on every edge, using the
+same active/urgent/occupied/empty colors and fade as dots. Labels reserve room
+for two digits; `spacing` remains a minimum pitch. Text is hinted and rendered
+at the output's physical fractional scale.
+
+The embedded font needs no system fonts or Fontconfig configuration. Setting
+`font_family` opts into native Fontconfig discovery (including standard aliases
+and generics such as `"sans-serif"`). Unavailable families, unreadable fonts,
+missing digits or broken/missing configuration fall back to the embedded font;
+complete text initialization failure falls back to ordinary dots. Dots mode
+never initializes font discovery or rendering. Font settings reload along with
+the rest of the config (`--reload` also retries a previously unavailable font).
+`font-size` and `font-family` are accepted aliases. Weights/styles are fixed.
+The existing `empty_alpha = 0.25` is preserved; increase it explicitly if empty
+labels are too faint for your theme.
 
 ## CLI
 

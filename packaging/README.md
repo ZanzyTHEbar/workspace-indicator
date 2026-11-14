@@ -15,7 +15,10 @@ root Makefile. See `make help` and the [install guide](../README.md#build-inspec
 skips compilation for Debian installs; `ARCHIVE=/path/to/file.tar.gz` selects an
 existing tarball. APT/pacman resolve host installation/removal. Build operations
 never install system packages. Run `make toolchain` to add the selected musl target
-to an existing rustup installation; a suitable cross-linker is also required.
+to an existing rustup installation. Source builds use Rust's bundled linker and
+checksum-pinned musl native libraries; see [native prerequisites](../native/README.md).
+Musl builds reject ELF interpreters and shared-library dependencies before packaging.
+Tar/deb/AUR distributions include the embedded font license and native-library notices.
 
 ## AUR
 

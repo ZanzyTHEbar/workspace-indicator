@@ -249,6 +249,9 @@ impl Palette {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Config {
+    pub style: IndicatorStyle,
+    pub font_family: String,
+    pub font_size: f64,
     pub position: Position,
     pub margin: i32,
     pub display_ms: u32,
@@ -280,6 +283,9 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            style: IndicatorStyle::Dots,
+            font_family: String::new(),
+            font_size: 14.0,
             position: Position::Bottom,
             margin: 60,
             display_ms: 1200,
@@ -320,6 +326,19 @@ impl Config {
             let val = raw_val.trim().trim_matches(['"', '\'']);
 
             match key.as_str() {
+                "style" => match val.to_ascii_lowercase().as_str() {
+                    "dots" => self.style = IndicatorStyle::Dots,
+                    "numbers" => self.style = IndicatorStyle::Numbers,
+                    _ => {}
+                },
+                "font_family" => self.font_family = val.trim().to_string(),
+                "font_size" => {
+                    if let Ok(v) = val.parse::<f64>() {
+                        if v.is_finite() {
+                            self.font_size = v.clamp(8.0, 48.0);
+                        }
+                    }
+                }
                 "position" | "location" | "edge" | "anchor" => {
                     if let Some(pos) = Position::parse(val) {
                         self.position = pos;
@@ -567,6 +586,12 @@ impl Config {
              end)\n"
         )
     }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum IndicatorStyle {
+    Dots,
+    Numbers,
 }
 
 /// Parse TOML, INI, Hyprland `.conf`, and `.lua` table key-value assignments.

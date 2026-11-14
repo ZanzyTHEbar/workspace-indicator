@@ -1,4 +1,5 @@
 use crate::config::{Config, Rgba};
+use crate::font::Digits;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct DotGeometry {
@@ -156,6 +157,25 @@ pub fn compute_pill_layout_morphed(
     }
 }
 
+pub fn compute_number_layout(
+    cfg: &Config,
+    digits: &Digits,
+    active_ws: usize,
+    occupied: &[bool],
+    urgent: &[bool],
+    occ_max: usize,
+) -> PillLayout {
+    let mut sized = cfg.clone();
+    sized.active_radius = digits.radius;
+    sized.dot_spacing = cfg
+        .dot_spacing
+        .max((digits.radius * 2.0 + 4.0).ceil() as i32);
+    let mut layout =
+        compute_pill_layout_morphed(&sized, active_ws, active_ws, 1.0, occupied, urgent, occ_max);
+    layout.active_capsule = None;
+    layout
+}
+
 /// Signed-distance-field coverage `[0.0, 1.0]` for a 2D capsule `(ax, ay) -> (bx, by)` with radius `r`.
 #[inline]
 fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
@@ -202,6 +222,7 @@ pub fn rasterize_pill_argb8888_scaled(
     layout: &PillLayout,
     active_ws: usize,
     border_alpha: f64,
+    numbers: Option<&Digits>,
 ) {
     let total = (phys_width * phys_height) as usize;
     if pixels.len() < total {
@@ -277,14 +298,17 @@ pub fn rasterize_pill_argb8888_scaled(
                 if idx + 1 == active_ws && layout.active_capsule.is_some() {
                     continue;
                 }
-                if (px - dot.cx).abs() > dot.radius + aa_pad
-                    || (py - dot.cy).abs() > dot.radius + aa_pad
-                {
+                let extent = numbers.map_or(dot.radius, |digits| digits.radius);
+                if (px - dot.cx).abs() > extent + aa_pad || (py - dot.cy).abs() > extent + aa_pad {
                     continue;
                 }
-                let cov = sdf_capsule_coverage_scaled(
-                    px, py, dot.cx, dot.cy, dot.cx, dot.cy, dot.radius, scale,
-                );
+                let cov = if let Some(digits) = numbers {
+                    digits.coverage(idx + 1, x, y, dot.cx, dot.cy)
+                } else {
+                    sdf_capsule_coverage_scaled(
+                        px, py, dot.cx, dot.cy, dot.cx, dot.cy, dot.radius, scale,
+                    )
+                };
                 if cov > 0.0 {
                     let src_a = dot.color.a * opacity * cov;
                     let inv_a = 1.0 - src_a;
@@ -336,7 +360,9 @@ pub fn rasterize_pill_argb8888(
     layout: &PillLayout,
     active_ws: usize,
 ) {
-    rasterize_pill_argb8888_scaled(pixels, width, height, 1.0, opacity, bg, layout, active_ws, 0.18);
+    rasterize_pill_argb8888_scaled(
+        pixels, width, height, 1.0, opacity, bg, layout, active_ws, 0.18, None,
+    );
 }
 
 #[cfg(test)]

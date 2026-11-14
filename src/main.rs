@@ -1,5 +1,6 @@
 mod config;
 mod ffi;
+mod font;
 mod ipc;
 mod render;
 mod wayland;
@@ -14,7 +15,9 @@ use std::ptr;
 
 use config::{xdg_cache_home, xdg_config_home, xdg_state_home, Config, ConfigLoader, Position};
 use ipc::{Socket2Stream, WorkspaceState};
-use render::{compute_pill_layout_morphed, rasterize_pill_argb8888_scaled, PillLayout};
+use render::{
+    compute_number_layout, compute_pill_layout_morphed, rasterize_pill_argb8888_scaled, PillLayout,
+};
 use wayland::WaylandClient;
 
 const TAG_WAYLAND: u64 = 1;
@@ -224,6 +227,8 @@ struct Daemon {
     ws_state: WorkspaceState,
     urgent: Vec<bool>,
     layout: PillLayout,
+    digits: Option<font::Digits>,
+    font_key: Option<(String, f64, f64)>,
     prev_ws: usize,
     morph_t: f64,
     morph_step: f64,
@@ -236,7 +241,43 @@ struct Daemon {
 }
 
 impl Daemon {
+    fn prepare_numbers(&mut self) -> bool {
+        if self.cfg.style == config::IndicatorStyle::Dots {
+            let changed = self.font_key.is_some();
+            self.font_key = None;
+            self.digits = None;
+            return changed;
+        }
+        let scale = self.wl.scale_factor();
+        if self
+            .font_key
+            .as_ref()
+            .is_some_and(|(family, size, prepared_scale)| {
+                family == &self.cfg.font_family
+                    && *size == self.cfg.font_size
+                    && *prepared_scale == scale
+            })
+        {
+            return false;
+        }
+        self.digits = font::Digits::load(&self.cfg.font_family, self.cfg.font_size, scale);
+        self.font_key = Some((self.cfg.font_family.clone(), self.cfg.font_size, scale));
+        true
+    }
+
     fn recompute_layout(&mut self) {
+        self.prepare_numbers();
+        if let Some(digits) = &self.digits {
+            self.layout = compute_number_layout(
+                &self.cfg,
+                digits,
+                self.ws_state.active_ws,
+                &self.ws_state.occupied,
+                &self.urgent,
+                self.ws_state.occ_max,
+            );
+            return;
+        }
         self.layout = compute_pill_layout_morphed(
             &self.cfg,
             self.ws_state.active_ws,
@@ -262,6 +303,10 @@ impl Daemon {
     }
 
     fn render_and_present(&mut self) {
+        if self.prepare_numbers() {
+            self.recompute_layout();
+            self.sync_surface();
+        }
         if !self.wl.configured {
             return;
         }
@@ -275,8 +320,16 @@ impl Daemon {
         let layout = &self.layout;
         let _ = self.wl.present_frame(phys_w, phys_h, opacity, |pixels| {
             rasterize_pill_argb8888_scaled(
-                pixels, phys_w, phys_h, scale, opacity, bg, layout, active_ws,
+                pixels,
+                phys_w,
+                phys_h,
+                scale,
+                opacity,
+                bg,
+                layout,
+                active_ws,
                 self.cfg.border_alpha,
+                self.digits.as_ref(),
             );
         });
     }
@@ -288,6 +341,7 @@ impl Daemon {
             let _ = sync_hyprland_files(&new_cfg);
         }
         self.cfg = new_cfg;
+        self.font_key = None;
         self.recompute_layout();
         self.sync_surface();
         if self.opacity > 0.001 {
@@ -376,7 +430,7 @@ fn print_usage() {
          Usage:\n  \
            workspace-indicator [OPTIONS]\n\n\
          Options:\n  \
-           --position <bottom|top|left|right>  Override indicator screen edge (left/right rotate 90°)\n  \
+           --position <bottom|top|left|right>  Override screen edge (left/right use a vertical pill)\n  \
            --config <path>                     Path to config.{{lua,toml,conf}}\n  \
            --peek                              Trigger OSD peek on running instance (SIGUSR1)\n  \
            --reload                            Reload config & theme on running instance (SIGUSR2)\n  \
@@ -532,6 +586,8 @@ fn main() {
         ws_state,
         urgent,
         layout,
+        digits: None,
+        font_key: None,
         prev_ws: active_ws,
         morph_t: 1.0,
         morph_step: 1.0,
@@ -543,6 +599,7 @@ fn main() {
         tfd_hold,
     };
 
+    daemon.recompute_layout();
     daemon.sync_surface();
     let _ = daemon.wl.dispatch_pending();
     if daemon.wl.needs_redraw {
