@@ -1,3 +1,10 @@
+# [0.7.0](https://github.com/ZanzyTHEbar/workspace-indicator/compare/v0.6.1...v0.7.0) (2026-11-14)
+
+
+### Features
+
+* add numeric indicators with system fonts ([afd9bde](https://github.com/ZanzyTHEbar/workspace-indicator/commit/afd9bdee3a288c40bfb32fec07f82aa7031eda03))
+
 ## [0.6.1](https://github.com/ZanzyTHEbar/workspace-indicator/compare/v0.6.0...v0.6.1) (2026-10-26)
 
 
