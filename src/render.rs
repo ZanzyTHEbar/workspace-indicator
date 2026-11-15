@@ -64,10 +64,10 @@ pub fn compute_pill_layout_morphed(
         .find_map(|(i, &u)| if u { Some(i) } else { None })
         .unwrap_or(0);
     let n = dot_count(cfg, active_ws, occ_max.max(urgent_max));
-    let long_axis = cfg.pad_h * 2
+    let long_axis = cfg.pad_h.unwrap_or(24) * 2
         + (n.saturating_sub(1) as i32) * cfg.dot_spacing
         + (cfg.active_radius * 2.0) as i32;
-    let short_axis = cfg.pad_v * 2 + (cfg.active_radius * 2.0) as i32;
+    let short_axis = cfg.pad_v.unwrap_or(14) * 2 + (cfg.active_radius * 2.0) as i32;
 
     let vertical = cfg.position.is_vertical();
     let (width, height) = if vertical {
@@ -165,13 +165,37 @@ pub fn compute_number_layout(
     urgent: &[bool],
     occ_max: usize,
 ) -> PillLayout {
-    let mut sized = cfg.clone();
-    sized.active_radius = digits.radius;
-    sized.dot_spacing = cfg
-        .dot_spacing
-        .max((digits.radius * 2.0 + 4.0).ceil() as i32);
     let mut layout =
-        compute_pill_layout_morphed(&sized, active_ws, active_ws, 1.0, occupied, urgent, occ_max);
+        compute_pill_layout_morphed(cfg, active_ws, active_ws, 1.0, occupied, urgent, occ_max);
+    let (along, cross) = if layout.vertical {
+        (digits.half_height, digits.half_width)
+    } else {
+        (digits.half_width, digits.half_height)
+    };
+    let pad_h = cfg.pad_h.map_or(cfg.font_size * 0.5, f64::from);
+    let pad_v = cfg.pad_v.map_or(cfg.font_size * 0.25, f64::from);
+    let short = (2.0 * (cross + pad_v)).ceil();
+    let radius = short * 0.5;
+    // Keep the whole first/last glyph rectangle inside the rounded cap,
+    // without using its diagonal to inflate the pill's cross-axis thickness.
+    let cap = radius - (radius * radius - cross * cross).sqrt();
+    let pitch = f64::from(cfg.dot_spacing).max((2.0 * along + 4.0).ceil());
+    let span = layout.dots.len().saturating_sub(1) as f64 * pitch;
+    let long = (span + 2.0 * (along + pad_h + cap)).ceil().max(short);
+    let start = (long - span) * 0.5;
+    (layout.width, layout.height) = if layout.vertical {
+        (short as i32, long as i32)
+    } else {
+        (long as i32, short as i32)
+    };
+    for (i, dot) in layout.dots.iter_mut().enumerate() {
+        let offset = start + i as f64 * pitch;
+        (dot.cx, dot.cy) = if layout.vertical {
+            (short * 0.5, offset)
+        } else {
+            (offset, short * 0.5)
+        };
+    }
     layout.active_capsule = None;
     layout
 }
@@ -298,8 +322,12 @@ pub fn rasterize_pill_argb8888_scaled(
                 if idx + 1 == active_ws && layout.active_capsule.is_some() {
                     continue;
                 }
-                let extent = numbers.map_or(dot.radius, |digits| digits.radius);
-                if (px - dot.cx).abs() > extent + aa_pad || (py - dot.cy).abs() > extent + aa_pad {
+                let (extent_x, extent_y) = numbers.map_or((dot.radius, dot.radius), |digits| {
+                    (digits.half_width, digits.half_height)
+                });
+                if (px - dot.cx).abs() > extent_x + aa_pad
+                    || (py - dot.cy).abs() > extent_y + aa_pad
+                {
                     continue;
                 }
                 let cov = if let Some(digits) = numbers {

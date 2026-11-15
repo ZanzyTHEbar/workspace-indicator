@@ -259,8 +259,8 @@ pub struct Config {
     pub fade_out_ms: u32,
     pub debounce_ms: u32,
     pub dot_spacing: i32,
-    pub pad_h: i32,
-    pub pad_v: i32,
+    pub pad_h: Option<i32>,
+    pub pad_v: Option<i32>,
     pub dot_radius: f64,
     pub active_radius: f64,
     pub persistent_workspaces: usize,
@@ -293,8 +293,8 @@ impl Default for Config {
             fade_out_ms: 300,
             debounce_ms: 80,
             dot_spacing: 20,
-            pad_h: 24,
-            pad_v: 14,
+            pad_h: None,
+            pad_v: None,
             dot_radius: 4.0,
             active_radius: 5.5,
             persistent_workspaces: 5,
@@ -376,12 +376,12 @@ impl Config {
                 }
                 "pad_h" => {
                     if let Ok(v) = val.parse::<i32>() {
-                        self.pad_h = v.clamp(2, 200);
+                        self.pad_h = Some(v.clamp(2, 200));
                     }
                 }
                 "pad_v" => {
                     if let Ok(v) = val.parse::<i32>() {
-                        self.pad_v = v.clamp(2, 200);
+                        self.pad_v = Some(v.clamp(2, 200));
                     }
                 }
                 "dot_radius" | "dot_r" => {

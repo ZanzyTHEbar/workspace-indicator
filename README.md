@@ -282,6 +282,24 @@ same active/urgent/occupied/empty colors and fade as dots. Labels reserve room
 for two digits; `spacing` remains a minimum pitch. Text is hinted and rendered
 at the output's physical fractional scale.
 
+Numbers use compact, font-relative padding by default: `pad_h` is 0.5 ×
+`font_size` at each end and `pad_v` is 0.25 × `font_size` on each side.
+These follow the pill's long/cross axes, including on left/right edges; digits
+remain upright. Rounded caps add only the clearance needed to contain the
+glyphs. Omit either key to keep that axis font-relative. Explicit values are
+logical pixels (2–200), independent of font size, scale, key order and reload:
+
+```toml
+style = "numbers"
+font_size = 14
+pad_h = 4  # tight ends; use 24 for generous ends
+pad_v = 2  # tight sides; use 14 for generous sides
+```
+
+Cells remain uniform for one/two-digit labels, and `spacing` is the minimum
+center-to-center pitch (raised when needed to separate glyphs). Dot defaults
+remain `pad_h = 24`, `pad_v = 14`; explicit dot padding is unchanged.
+
 The embedded font needs no system fonts or Fontconfig configuration. Setting
 `font_family` opts into native Fontconfig discovery (including standard aliases
 and generics such as `"sans-serif"`). Unavailable families, unreadable fonts,

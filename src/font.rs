@@ -40,7 +40,8 @@ pub struct Digits {
     scale: f64,
     top: i32,
     bottom: i32,
-    pub radius: f64,
+    pub half_width: f64,
+    pub half_height: f64,
 }
 
 impl Digits {
@@ -92,7 +93,8 @@ impl Digits {
             scale,
             top,
             bottom,
-            radius: 0.0,
+            half_width: 0.0,
+            half_height: 0.0,
         };
         let width = (1..=32)
             .map(|n| {
@@ -101,9 +103,9 @@ impl Digits {
             })
             .max()
             .unwrap_or(0);
-        // A circumscribed cell keeps glyph corners inside the pill even at
-        // minimum padding; its pitch is fixed for every supported workspace ID.
-        digits.radius = f64::from(width).hypot(f64::from(top + bottom)) / (2.0 * scale) + 1.0;
+        // Reserve one physical pixel for independently rounded origins/baselines.
+        digits.half_width = (f64::from(width) * 0.5 + 1.0) / scale;
+        digits.half_height = (f64::from(top + bottom) * 0.5 + 1.0) / scale;
         Some(digits)
     }
 
