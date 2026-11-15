@@ -1,3 +1,10 @@
+## [0.7.1](https://github.com/ZanzyTHEbar/workspace-indicator/compare/v0.7.0...v0.7.1) (2026-11-15)
+
+
+### Bug Fixes
+
+* scale numeric padding with font size ([c3d0049](https://github.com/ZanzyTHEbar/workspace-indicator/commit/c3d00498a6edb8997a7a4dec34098ad1a786c8bf))
+
 # [0.7.0](https://github.com/ZanzyTHEbar/workspace-indicator/compare/v0.6.1...v0.7.0) (2026-11-14)
 
 
